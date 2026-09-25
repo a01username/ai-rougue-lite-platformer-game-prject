@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Ascent — platformer prototype</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main>
+    <header><a class="brand" href="index.html">ASCENT<span> / </span></a><span class="edition">A MOUNTAIN ROGUELITE <b>01</b></span><span id="dev-indicator" hidden role="status" style="color:#f1c797;font:12px monospace">DEV MODE · INVINCIBLE</span><span class="build">FIRST ITERATION <i></i></span></header>
+    <div id="game-display"><section class="game-shell" aria-label="Ascent game">
+      <div class="hud"><div><div class="eyebrow">VITALS</div><div id="hearts" aria-label="10 of 10 hit points"></div></div><div class="location"><span id="floor-label">FLOOR 01</span><strong id="room-label">THE START</strong></div><div class="game-actions"><button id="fullscreen-button" aria-pressed="false" title="Toggle fullscreen">FULLSCREEN</button><button id="pause-button" title="Pause (Escape)">Ⅱ <span>ESC</span></button></div></div>
+      <canvas id="game" width="1100" height="700" tabindex="0" aria-label="Platformer. A and D move, W or Space jumps, S crouches, arrow keys attack. Full controls below."></canvas>
+      <div id="dev-controls" hidden aria-label="Developer settings">
+        <span>DEV</span><span>Damage</span><button id="dev-damage-down" aria-label="Decrease developer damage">−</button><output id="dev-damage-value">3</output><button id="dev-damage-up" aria-label="Increase developer damage">+</button>
+        <span>Flight</span><button id="dev-speed-down" aria-label="Decrease flight speed">−</button><output id="dev-speed-value">1×</output><button id="dev-speed-up" aria-label="Increase flight speed">+</button><button id="dev-reset">RESET</button>
+      </div>
+      <div class="room-caption"><span id="room-coordinate">ROOM 01</span><span id="room-note">FIND YOUR WAY UP</span></div>
+      <div class="overlay" id="overlay"><div class="panel"><div class="eyebrow" id="overlay-kicker">UP THE MOUNTAIN</div><h1 id="overlay-title">The only way<br>is up.</h1><p id="overlay-copy">Empty hands. Five hearts. One mountain.<br>Climb from the foothills into the snow.</p><button class="primary" id="overlay-action">BEGIN THE CLIMB <span>↗</span></button><p class="small" id="overlay-foot">A / D to move · W / SPACE to jump · ARROWS to attack</p></div></div>
+    </section></div>
+    <footer><div class="scheme-picker" role="group" aria-label="Control scheme"><span>CONTROLS</span><button id="scheme-original" aria-pressed="false">ORIGINAL · MOUSE</button><button id="scheme-new" aria-pressed="true">NEW · ARROW KEYS</button></div><div class="controls"><span><kbd>A</kbd><kbd>D</kbd> MOVE</span><span><kbd>W</kbd><kbd>SPACE</kbd> JUMP</span><span><kbd>←</kbd><kbd>↑</kbd><kbd>↓</kbd><kbd>→</kbd> ATTACK</span><span><kbd>S</kbd> CROUCH</span><span><kbd>E</kbd> INVENTORY</span><span><kbd>TAB</kbd> MAP</span></div><details><summary>Movement field notes <span>+</span></summary><div class="notes"><p><b>Downward movement</b>Press Down Arrow in the air to attack down and pogo on enemies or projectiles. Hold S + Space to drop through a thin platform. Crouching keeps you from walking off an edge.</p><p><b>Walls & ledges</b>Touch visible rock to slide; open cliff edges cannot be gripped. Hold toward rock to slide slower, or hold S to stop. W or Space wall-jumps or pulls you onto a grabbed ledge.</p><p><b>Your climb</b>Walk through gaps in the side walls, jump through ceiling openings, or drop through floor openings. Defeat the boss in the final room to reach the next mountain section. Item and shop rooms end separate branching paths and remain placeholders.</p></div></details><div class="bottom-line"><span>LOCAL BUILD / NO CONNECTION REQUIRED</span><span>HTML · CSS · JAVASCRIPT</span></div></footer>
+  </main>
+  <script src="sprites.js"></script>
+  <script src="game.js"></script>
+</body>
+</html>
+
