@@ -532,6 +532,17 @@ function consumeAttack(down){
   }
   attackQueued=false;
 }
+function riverZones(r){
+  if(r.size!=='invertedL')return null;
+  return {river:{x:756,y:552,w:r.w-781,h:28},fall:{x:748,y:560,w:32,h:r.floorY-560},pool:{x:688,y:r.floorY-20,w:92,h:20}};
+}
+function applyRiverCurrent(p,dt){
+  const water=riverZones(room);p.inCurrent=false;
+  if(!water||devFlight)return;
+  if(overlap(p,water.river)){p.vx-=2200*dt;p.inCurrent=true;}
+  if(overlap(p,water.fall)){p.vy=Math.min(850,p.vy+2300*dt);p.inCurrent=true;}
+  if(overlap(p,water.pool)){p.vx-=500*dt;p.inCurrent=true;}
+}
 function updatePlayer(dt){
   const p=player, oldX=p.x,oldY=p.y,down=keys.has('KeyS')||keys.has('ShiftLeft')||keys.has('ShiftRight');
   p.dashCD=Math.max(0,(p.dashCD||0)-dt);p.dashTime=Math.max(0,(p.dashTime||0)-dt);
@@ -575,9 +586,10 @@ function updatePlayer(dt){
   p.vy=Math.min(740,p.vy+1120*dt);
   if(p.wall&&p.vy>0){p.vy=Math.min(p.vy,down?0:direction===p.wall?48:110);}
   if(p.dashTime>0){p.vx=p.dashFace*700;p.vy=0;}
+  applyRiverCurrent(p,dt);
   const support=p.ground;p.wall=0;
   p.x+=p.vx*dt;
-  if(crouch&&support&&p.drop<=0&&p.vy>=0&&p.y+p.h<=support.y+3){p.x=clamp(p.x,support.x,support.x+support.w-p.w);}
+  if(crouch&&!p.inCurrent&&support&&p.drop<=0&&p.vy>=0&&p.y+p.h<=support.y+3){p.x=clamp(p.x,support.x,support.x+support.w-p.w);}
   const passages=exits(),leftOpen=passages.some(e=>e.dx===-1&&p.y>=e.y&&p.y+p.h<=e.y+e.h+1),rightOpen=passages.some(e=>e.dx===1&&p.y>=e.y&&p.y+p.h<=e.y+e.h+1);
   const bottom=passages.find(e=>e.dy===-1);
   if(crouch&&support===room.platforms[0]&&bottom){
@@ -1081,14 +1093,22 @@ function drawMidground(){
   ctx.globalAlpha=1;
 }
 function drawWaterfalls(){
-  if(room.size!=='invertedL')return;
-  // Decorative water falls off the horizontal arm into the closed rock recess.
-  for(const x of [980,1316]){
-    rect(x-12,564,64,12,'#8ebdb4');rect(x,576,32,room.h-576,'#467d91');
-    rect(x+4,576,12,room.h-576,'#78b6be');
-    for(let i=0;i<18;i++){const y=580+((i*39+tick*145)%(room.h-580));rect(x+4+(i%3)*8,Math.floor(y/4)*4,4,16,'#b9dcce');}
-    for(let i=0;i<5;i++)rect(x-8+i*12,room.h-12-Math.floor((Math.sin(tick*6+i)*.5+.5)*3)*4,8,4,'#b9dcce');
+  const water=riverZones(room);if(!water)return;
+  const {river,fall,pool}=water;
+  ctx.globalAlpha=.78;
+  rect(river.x,river.y,river.w,river.h,'#467d91');
+  rect(fall.x,fall.y,fall.w,fall.h,'#467d91');
+  rect(pool.x,pool.y,pool.w,pool.h,'#467d91');
+  ctx.globalAlpha=1;
+  rect(river.x,river.y,river.w,4,'#a9dad5');
+  rect(fall.x,fall.y,8,fall.h,'#78b6be');
+  for(let i=0;i<20;i++){
+    const x=river.x+((i*53-tick*145)%river.w+river.w)%river.w;
+    rect(Math.floor(x/4)*4,river.y+8+(i%3)*4,12,4,'#8ccbd0');
+    const y=fall.y+(i*37+tick*210)%fall.h;
+    rect(fall.x+8+(i%3)*4,Math.floor(y/4)*4,4,16,'#b9dcce');
   }
+  for(let i=0;i<7;i++)rect(pool.x+i*12,pool.y-Math.floor((Math.sin(tick*7+i)*.5+.5)*3)*4,8,4,'#b9dcce');
 }
 function drawPlatforms(){
   const t=mountainTheme();
