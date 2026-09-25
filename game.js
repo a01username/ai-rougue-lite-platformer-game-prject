@@ -7,7 +7,8 @@ let ctx=displayCtx;displayCtx.imageSmoothingEnabled=false;sceneryCtx.imageSmooth
 const $=id=>document.getElementById(id);
 let W=1100,H=700;
 const keys=new Set();
-const ROOM_SIZES={invertedL:{w:1560,h:1160,gridW:2,gridH:2},small:{w:780,h:580,gridW:1,gridH:1},large:{w:1560,h:1160,gridW:2,gridH:2},long:{w:1560,h:580,gridW:2,gridH:1},tall:{w:780,h:1160,gridW:1,gridH:2}};
+const isL=r=>r.size==='invertedL'||r.size==='invertedLRight';
+const ROOM_SIZES={invertedLRight:{w:1560,h:1160,gridW:2,gridH:2},invertedL:{w:1560,h:1160,gridW:2,gridH:2},small:{w:780,h:580,gridW:1,gridH:1},large:{w:1560,h:1160,gridW:2,gridH:2},long:{w:1560,h:580,gridW:2,gridH:1},tall:{w:780,h:1160,gridW:1,gridH:2}};
 const MOUNTAIN_SECTIONS=[
   {name:'FOOTHILLS',sky:'#203d3a',horizon:'#728371',far:'#526a60',near:'#344e43',rock:'#515a48',edge:'#9aaa70',shade:'#303e35',snow:false,trees:true},
   {name:'PINE BELT',sky:'#193139',horizon:'#607b74',far:'#415e5b',near:'#284b43',rock:'#49584c',edge:'#7eae88',shade:'#283c35',snow:false,trees:true},
@@ -195,7 +196,8 @@ function tryBuildFloor(){
     const shape=ROOM_SIZES[size];let x=parent.x,y=parent.y;
     if(direction==='right'){x+=parent.gridW;y+=Math.max(0,parent.gridH-shape.gridH);}
     if(direction==='left'){x-=shape.gridW;y+=Math.max(0,parent.gridH-shape.gridH);}
-    if(direction==='up')y+=parent.gridH;
+    let bendColumn=null;
+    if(direction==='up'){y+=parent.gridH;if(isL(parent)||isL({size})){bendColumn=parent.x+(isL(parent)&&parent.size==='invertedL'?1:0);x=bendColumn-(size==='invertedLRight'?1:0);}}
     if(branch&&y+shape.gridH>branchCeiling)return null;
     const side=direction==='left'||direction==='right';
     const low=Math.max(parent.y,y)*580,high=Math.min(parent.y+parent.gridH,y+shape.gridH)*580;
@@ -205,7 +207,7 @@ function tryBuildFloor(){
     const opposite={left:'right',right:'left',up:'down'}[direction];
     parent.links[direction]=r;r.links[opposite]=parent;r.parent=parent;r.entryDirection=opposite;r.entryAltitude=altitude;r.branch=branch;
     if(!branch)parent.forward=direction;
-    const port=side?{altitude}:{worldX:(type==='finish'||size==='invertedL')?(x+.5)*780:(Math.max(parent.x,x)+Math.min(parent.x+parent.gridW,x+shape.gridW))*390};
+    const port=side?{altitude}:{worldX:bendColumn!==null?(bendColumn+.5)*780:(type==='finish'||size==='invertedL')?(x+.5)*780:(Math.max(parent.x,x)+Math.min(parent.x+parent.gridW,x+shape.gridW))*390};
     parent.ports[direction]=port;r.ports[opposite]=port;
     return r;
   }
@@ -213,7 +215,7 @@ function tryBuildFloor(){
   // A compact first climb, then one extra route section every three floors.
   const routeSections=2+Math.floor((floor-1)/3);
   for(let level=0;level<routeSections;level++){
-    if(current.size!=='large'&&current.size!=='invertedL'&&Math.random()<.6){
+    if(current.size!=='large'&&!isL(current)&&Math.random()<.6){
       const direction=pick(['left','right']),distance=pick([1,2]);
       for(let step=0;step<distance;step++){
         const previous=current,connector=attach(current,direction,step===distance-1?'small':pick(['long','small']));
@@ -226,23 +228,23 @@ function tryBuildFloor(){
       }
     }
     if(Math.random()<.55){const shaft=attach(current,'up','tall');if(shaft)current=shaft;}
-    current=attach(current,'up',pick(['small','large','invertedL']))||attach(current,'up','small')||current;
+    current=attach(current,'up',pick(['small','large','invertedL','invertedLRight']))||attach(current,'up','small')||current;
   }
   // Each special room ends its own 5–7-room branch with varied footprints.
   const main=[...rooms.values()].filter(r=>(r.type==='normal'||r.type==='start'));
   for(const type of ['item','shop']){
     let placed=false;
     for(const source of shuffle(main)){
-      for(const direction of shuffle(source.size==='long'?['left','right']:source.size==='tall'||source.size==='invertedL'?['up']:['left','right','up'])){
+      for(const direction of shuffle(source.size==='long'?['left','right']:source.size==='tall'||isL(source)?['up']:['left','right','up'])){
         for(let attempt=0;attempt<12&&!placed;attempt++){
         const path=[];let tip=source,horizontalRun=0,upSteps=0;const length=pick([5,6,7]);
         function extend(type,index){
           const sideDirection=direction==='up'?(source.x<=0?'left':'right'):direction;
-          const directions=index===0?[direction]:tip.size==='long'?[sideDirection]:tip.size==='tall'||tip.size==='large'||tip.size==='invertedL'||horizontalRun>=2?['up']:shuffle(['up',sideDirection]);
+          const directions=index===0?[direction]:tip.size==='long'?[sideDirection]:tip.size==='tall'||tip.size==='large'||isL(tip)||horizontalRun>=2?['up']:shuffle(['up',sideDirection]);
           for(const d of directions){
             // Match the incoming connection and reserve the correct outgoing
             // direction for elongated rooms. Occupancy checks cover every tile.
-            const sizes=shuffle(d==='up'?['small','large','tall','invertedL']:['small','large','long']);
+            const sizes=shuffle(d==='up'?['small','large','tall','invertedL','invertedLRight']:['small','large','long']);
             for(const size of sizes){if(size==='long'&&horizontalRun>=1)continue;const n=attach(tip,d,size,type,true);if(n){horizontalRun=d==='up'?0:horizontalRun+1;if(d==='up')upSteps++;return n;}}
           }
           return null;
@@ -337,7 +339,7 @@ function generateRoom(r,size){
   // The main route includes moving and collapsing steps. Collapsed steps
   // return, and the final landing stays fixed so every exit remains usable.
   const rows=Math.max(3,Math.floor((r.floorY-140)/112)), rise=(r.floorY-140)/rows;
-  let center=r.size==='invertedL'?350:rand(190,r.w-190), drift=pick([-1,1]);
+  let center=isL(r)?(r.size==='invertedLRight'?1210:350):rand(190,r.w-190), drift=pick([-1,1]);
   for(let i=0;i<rows;i++){
     const previous=r.route.at(-1);
     if(previous){
@@ -346,14 +348,14 @@ function generateRoom(r,size){
       if(center<195||center>r.w-195){drift*=-1;center=previous.x+previous.w/2+drift*rand(195,205);}
       center=clamp(center,195,r.w-195);
     }
-    if(r.size==='invertedL'&&r.floorY-rise*(i+1)>420)center=clamp(center,190,550);
+    if(isL(r)&&r.floorY-rise*(i+1)>420)center=r.size==='invertedLRight'?clamp(center,1010,1370):clamp(center,190,550);
     const width=rand(180,190), y=r.floorY-rise*(i+1);
     const type=i===rows-1?'oneway':i%3===0?'break':i%3===1?'moving':'oneway';
     const s=platform(center-width/2,y,width,type,type==='break'?20:10);
     if(type==='moving')configureTrack(s);
     r.route.push(s);r.platforms.push(s);
   }
-  if(r.size==='invertedL'){const corner=platform(780,580,780,'solid',r.h-580);corner.shapeBoundary=true;r.platforms.push(corner);}
+  if(isL(r)){const corner=platform(r.size==='invertedLRight'?0:780,580,780,'solid',r.h-580);corner.shapeBoundary=true;r.platforms.push(corner);}
   const top=r.route.at(-1);r.topX=top.x+top.w/2-21;
   r.bottomX=clamp(r.route[0].x+r.route[0].w/2-21,85,r.w-127);
   r.spawnX=clamp(r.bottomX+(r.bottomX<r.w/2?160:-160),65,r.w-91);
@@ -392,7 +394,7 @@ function generateRoom(r,size){
   if(r.bossId){createBoss(r);return;}
   if(r.type!=='normal')return;
   const supports=shuffle(r.platforms.slice(1).filter(s=>!s.shapeBoundary));
-  const count=Math.min(supports.length,({small:3,long:5,large:7,tall:7,invertedL:7})[size]);
+  const count=Math.min(supports.length,({small:3,long:5,large:7,tall:7,invertedL:7,invertedLRight:7})[size]);
   let kinds=[];
   for(const s of supports){
     if(r.enemies.length>=count)break;
@@ -533,15 +535,17 @@ function consumeAttack(down){
   attackQueued=false;
 }
 function riverZones(r){
-  if(r.size!=='invertedL')return null;
-  return {river:{x:756,y:552,w:r.w-781,h:28},fall:{x:748,y:560,w:32,h:r.floorY-560},pool:{x:688,y:r.floorY-20,w:92,h:20}};
+  if(!isL(r))return null;
+  const water={river:{x:756,y:552,w:r.w-781,h:28},fall:{x:748,y:560,w:32,h:r.floorY-560},pool:{x:688,y:r.floorY-20,w:92,h:20}};
+  if(r.size==='invertedLRight')for(const zone of Object.values(water))zone.x=r.w-zone.x-zone.w;
+  water.direction=r.size==='invertedLRight'?1:-1;return water;
 }
 function applyRiverCurrent(p,dt){
   const water=riverZones(room);p.inCurrent=false;
   if(!water||devFlight)return;
-  if(overlap(p,water.river)){p.vx-=2200*dt;p.inCurrent=true;}
-  if(overlap(p,water.fall)){p.vy=Math.min(850,p.vy+2300*dt);p.inCurrent=true;}
-  if(overlap(p,water.pool)){p.vx-=500*dt;p.inCurrent=true;}
+  if(overlap(p,water.river)){p.vx+=water.direction*5200*dt;p.inCurrent=true;}
+  if(overlap(p,water.fall)){p.vy=Math.min(850,p.vy+4200*dt);p.inCurrent=true;}
+  if(overlap(p,water.pool)){p.vx+=water.direction*1000*dt;p.inCurrent=true;}
 }
 function updatePlayer(dt){
   const p=player, oldX=p.x,oldY=p.y,down=keys.has('KeyS')||keys.has('ShiftLeft')||keys.has('ShiftRight');
@@ -1103,7 +1107,7 @@ function drawWaterfalls(){
   rect(river.x,river.y,river.w,4,'#a9dad5');
   rect(fall.x,fall.y,8,fall.h,'#78b6be');
   for(let i=0;i<20;i++){
-    const x=river.x+((i*53-tick*145)%river.w+river.w)%river.w;
+    const x=river.x+((i*53+tick*220*water.direction)%river.w+river.w)%river.w;
     rect(Math.floor(x/4)*4,river.y+8+(i%3)*4,12,4,'#8ccbd0');
     const y=fall.y+(i*37+tick*210)%fall.h;
     rect(fall.x+8+(i%3)*4,Math.floor(y/4)*4,4,16,'#b9dcce');
@@ -1275,9 +1279,9 @@ function drawMap(){
     const w=cell*(r.gridW-.18),h=cell*(r.gridH-.18);
     const alpha=mapExpanded?.75:.4;
     const color=current?`rgba(220,243,156,${alpha})`:revealed?`rgba(115,142,102,${alpha*.65})`:'rgba(98,118,92,.12)';
-    if(r.size==='invertedL'){rect(n.x-w/2,n.y-h/2,w,h/2,color);rect(n.x-w/2,n.y,w/2,h/2,color);}else rect(n.x-w/2,n.y-h/2,w,h,color);
+    if(isL(r)){rect(n.x-w/2,n.y-h/2,w,h/2,color);rect(r.size==='invertedLRight'?n.x:n.x-w/2,n.y,w/2,h/2,color);}else rect(n.x-w/2,n.y-h/2,w,h,color);
     ctx.strokeStyle=current?'rgba(238,255,195,.9)':revealed?'rgba(195,215,164,.48)':'rgba(165,188,143,.26)';ctx.lineWidth=current?2:1;
-    if(!revealed)ctx.setLineDash([3,3]);if(r.size==='invertedL'){ctx.beginPath();ctx.moveTo(n.x-w/2,n.y-h/2);ctx.lineTo(n.x+w/2,n.y-h/2);ctx.lineTo(n.x+w/2,n.y);ctx.lineTo(n.x,n.y);ctx.lineTo(n.x,n.y+h/2);ctx.lineTo(n.x-w/2,n.y+h/2);ctx.closePath();ctx.stroke();}else ctx.strokeRect(n.x-w/2,n.y-h/2,w,h);ctx.setLineDash([]);
+    if(!revealed)ctx.setLineDash([3,3]);if(isL(r)){const flip=r.size==='invertedLRight'?-1:1;ctx.beginPath();for(const [i,[x,y]] of [[-w/2,-h/2],[w/2,-h/2],[w/2,0],[0,0],[0,h/2],[-w/2,h/2]].entries()){if(i===0)ctx.moveTo(n.x+x*flip,n.y+y);else ctx.lineTo(n.x+x*flip,n.y+y);}ctx.closePath();ctx.stroke();}else ctx.strokeRect(n.x-w/2,n.y-h/2,w,h);ctx.setLineDash([]);
     const marker=roomMarker(r);
     if(marker)drawRoomMarker(marker,n.x,n.y,Math.max(8,Math.min(18,cell*.45)));
     else if(current){ctx.fillStyle='#f0ffd0';ctx.beginPath();ctx.arc(n.x,n.y,Math.max(2,cell*.06),0,Math.PI*2);ctx.fill();}
