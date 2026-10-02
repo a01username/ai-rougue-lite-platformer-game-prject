@@ -150,6 +150,30 @@ function buildWallJumpRoute(r){
     const index=r.platforms.indexOf(old);r.platforms[index]=wall;r.route[i]=wall;added++;
   }
 }
+function buildArmObstacles(r){
+  if(!isL(r))return;
+  const armLeft=mirroredL(r)?40:820,armRight=mirroredL(r)?r.w-820:r.w-40;
+  const candidates=r.platforms.filter(s=>s.access&&s.y>145&&s.y<460&&s.x>=armLeft&&s.x+s.w<=armRight).sort((a,b)=>a.x-b.x);
+  let previousX=-Infinity;
+  for(const ledge of candidates){
+    if(ledge.x-previousX<230)continue;
+    const wall=platform(ledge.x+ledge.w/2-24,ledge.y,48,'solid',580-ledge.y);
+    if(r.platforms.some(s=>s!==ledge&&!s.shapeBoundary&&overlap(wall,platformBounds(s))))continue;
+    // Keep the existing landing elevation while making its sides part of
+    // a continuous rock buttress rising out of the river shelf.
+    wall.verticalWall=true;wall.armWall=true;
+    r.platforms[r.platforms.indexOf(ledge)]=wall;
+    for(const s of r.platforms)if(s.accessFrom===ledge)s.accessFrom=wall;
+    wall.access=true;wall.accessFrom=ledge.accessFrom;previousX=wall.x;
+  }
+  // Ceiling rock breaks up the upper passage, with clear space beneath it.
+  for(let x=armLeft+90;x<armRight-100;x+=260){
+    const wall=platform(x,15,48,'solid',pick([64,80,96]));wall.verticalWall=true;wall.armCeiling=true;
+    const clearance={x:x-36,y:15,w:120,h:wall.h+70};
+    if(Math.abs(x-r.topX)<150||r.platforms.some(s=>!s.shapeBoundary&&overlap(clearance,platformBounds(s))))continue;
+    r.platforms.push(wall);
+  }
+}
 function addRockWalls(r,jumpCorridors){
   r.wallGrips={left:[],right:[]};
   for(const side of ['left','right']){
@@ -408,6 +432,7 @@ function generateRoom(r,size){
   }
   configurePassages(r);
   openFloorAccess(r);jumpCorridors.push(r.floorAccess);
+  buildArmObstacles(r);
   buildTracks(r);
   addRockWalls(r,jumpCorridors);
   // A drop-through foothold makes the floor route usable in both directions.
@@ -1413,3 +1438,4 @@ for(const [id,setting,step]of [['dev-damage-down','damage',-1],['dev-damage-up',
   });
 }
 $('dev-reset').addEventListener('click',()=>{if(!devMode)return;devDamage=3;devFlightSpeed=1;refreshDevIndicator();canvas.focus();});
+
