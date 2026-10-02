@@ -864,6 +864,16 @@ function updateBoss(b,dt){
   if(b.id==='heart'&&updateHeartDash(b,dt))return;
   if(b.tier&&b.id!=='warden'){updateBossVariant(b,dt);return;}
   if(b.id==='warden'){
+    const riding=b.support&&b.support.gone<=0&&b.phase!=='jump';
+    if(riding){
+      b.x+=b.support.dx||0;b.y=b.support.y-b.h;
+      if(b.phase==='approach')b.launchX+=b.support.dx||0;
+    }
+    if(b.targetSupport&&b.targetSupport.gone<=0){
+      const target=b.targetSupport;
+      b.targetX=clamp(b.targetX+(target.dx||0),target.x,target.x+target.w-b.w);
+      b.targetY=target.y-b.h;
+    }
     if(b.support?.gone>0&&b.phase!=='jump'){b.phase='jump';b.vy=0;b.vx=0;b.clock=0;}
     if(b.phase==='rockfall'){
       if(b.clock>.9){for(const mark of b.rockTargets)bossShot(mark.x-6,mark.y,0,315);b.guard=false;b.phase='recover';b.clock=0;}return;
