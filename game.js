@@ -80,7 +80,7 @@ function selectControls(scheme){
     (original?'<span><kbd>SPACE</kbd> JUMP</span><span><kbd>LMB</kbd> ATTACK</span><span><kbd>W</kbd> AIM UP</span><span><kbd>SHIFT</kbd><kbd>S</kbd> CROUCH / AIM DOWN</span>':'<span><kbd>W</kbd><kbd>SPACE</kbd> JUMP</span><span><kbd>←</kbd><kbd>↑</kbd><kbd>↓</kbd><kbd>→</kbd> ATTACK</span><span><kbd>SHIFT</kbd><kbd>S</kbd> CROUCH</span>')+'<span><kbd>Q</kbd> DASH</span><span><kbd>E</kbd> INVENTORY</span><span><kbd>TAB</kbd> MAP</span>';
   const notes=document.querySelectorAll('.notes p');
   notes[0].innerHTML='<b>Downward movement</b>'+(original?'Hold S and click in the air to pogo.':'Press Down Arrow in the air to attack down and pogo on enemies or projectiles.')+' Hold Shift (or S) + Space to drop through a thin platform. Crouching keeps you from walking off an edge.';
-  notes[1].innerHTML='<b>Walls & ledges</b>Touch visible rock to slide; open cliff edges cannot be gripped. Hold toward rock to slide slower, or hold Shift (or S) to stop. '+(original?'Space':'W or Space')+' wall-jumps or pulls you onto a grabbed ledge.';
+  notes[1].innerHTML='<b>Walls & ledges</b>Touch visible rock to slide; open cliff edges cannot be gripped. Hold toward rock to slide slower, or hold Shift (or S) to stop. '+(original?'Space':'W or Space')+' wall-jumps or pulls you onto a grabbed ledge. After pulling up, release your movement key before walking again.';
   canvas.setAttribute('aria-label','Platformer. '+controlHint()+'. Full controls below.');
   if(mode==='title')$('overlay-foot').textContent=controlHint();
   if(mode==='playing')canvas.focus();
@@ -485,7 +485,7 @@ function enemy(type,x,y,support){return {type,x,y,w:28,h:type==='crawler'?28:22,
 function createPlayer(){return {x:170,y:620,w:26,h:40,vx:0,vy:0,hp:10,face:1,ground:null,wall:0,ledge:null,iframes:0,hitLock:0,drop:0,attackCD:0,coyote:0,ledgeCD:0,crouch:false};}
 function enterRoom(r,from='start'){
   room=r;r.visited=true;shots=[];numbers=[];attack=null;exitLock=.75;exitArmed=false;
-  const p=player;p.vx=p.vy=0;p.ledge=null;p.ground=null;p.h=40;p.wall=0;p.drop=0;p.coyote=0;
+  const p=player;p.climb=null;p.ledgeMoveKey=null;p.vx=p.vy=0;p.ledge=null;p.ground=null;p.h=40;p.wall=0;p.drop=0;p.coyote=0;
   if(from==='left'){p.x=45;p.y=(r.doors.left?.sill??r.floorY)-p.h;}
   else if(from==='right'){p.x=r.w-71;p.y=(r.doors.right?.sill??r.floorY)-p.h;}
   else if(from==='bottom'){p.x=r.spawnX;p.y=r.floorY-p.h;}
@@ -562,7 +562,7 @@ window.addEventListener('blur',()=>{resetDevInput();keys.clear();if(mode==='play
 document.addEventListener('visibilitychange',()=>{if(document.hidden){resetDevInput();keys.clear();if(mode==='playing')setMode('paused');}});
 function damage(source){
   const p=player;if(devMode||p.iframes>0||mode!=='playing')return;
-  p.hp--;p.iframes=1.15;p.hitLock=.2;p.vx=(p.x+p.w/2<source.x+source.w/2?-1:1)*270;p.vy=-230;p.ledge=null;p.ground=null;updateHearts();
+  p.climb=null;p.ledgeMoveKey=null;p.hp--;p.iframes=1.15;p.hitLock=.2;p.vx=(p.x+p.w/2<source.x+source.w/2?-1:1)*270;p.vy=-230;p.ledge=null;p.ground=null;updateHearts();
   if(p.hp<=0)setMode('dead');
 }
 function attackBox(){
@@ -594,10 +594,23 @@ function applyRiverCurrent(p,dt){
   if(overlap(p,water.fall)){p.vy=Math.min(850,p.vy+4200*dt);p.inCurrent=true;}
   if(overlap(p,water.pool)){p.vx+=water.direction*1000*dt;p.inCurrent=true;}
 }
+function updateLedgeClimb(p,dt){
+  const c=p.climb,s=c.platform;
+  if(s.gone>0){p.climb=null;p.ledgeCD=.3;return false;}
+  c.time=Math.min(.3,c.time+dt);const t=c.time/.3;
+  const ease=v=>{v=clamp(v,0,1);return v*v*(3-2*v);};
+  p.x=s.x+c.startX+(c.endX-c.startX)*ease((t-.5)/.5);
+  p.y=s.y+c.startY+(-p.h-c.startY)*ease(t/.6);
+  p.vx=p.vy=0;p.ground=null;p.wall=0;jumpQueued=attackQueued=false;
+  if(t===1){p.climb=null;p.ground=s;p.coyote=.1;p.ledgeCD=.3;}
+  return true;
+}
 function updatePlayer(dt){
   const p=player, oldX=p.x,oldY=p.y,down=keys.has('KeyS')||keys.has('ShiftLeft')||keys.has('ShiftRight');
   p.dashCD=Math.max(0,(p.dashCD||0)-dt);p.dashTime=Math.max(0,(p.dashTime||0)-dt);
   for(const field of ['iframes','drop','attackCD','coyote','ledgeCD','hitLock'])p[field]=Math.max(0,p[field]-dt);
+  if(p.ledgeMoveKey&&!keys.has(p.ledgeMoveKey))p.ledgeMoveKey=null;
+  if(p.climb&&!devFlight){if(updateLedgeClimb(p,dt))return;}
   if(!devFlight&&(p.ground||p.ledge||p.wall||p.coyote>0))flightTap=null;
   if(devFlight&&devMode){
     jumpQueued=false;
@@ -617,11 +630,20 @@ function updatePlayer(dt){
   else if(wantedH>p.h){const expanded={x:p.x,y:p.y-(wantedH-p.h),w:p.w,h:wantedH};if(!room.platforms.some(s=>s.type!=='oneway'&&s.type!=='moving'&&s.gone<=0&&overlap(expanded,s))){p.y=expanded.y;p.h=wantedH;}}
   p.crouch=p.h<40;
   let direction=(keys.has('KeyD')?1:0)-(keys.has('KeyA')?1:0);
+  if(p.ledgeMoveKey)direction=0;
   if(direction)p.face=direction;
   if(p.ledge){
     const ledge=p.ledge;
     if(ledge.platform.gone>0){p.ledge=null;p.ledgeCD=.25;}
-    else if(jumpQueued){p.x=ledge.side===1?ledge.platform.x+5:ledge.platform.x+ledge.platform.w-p.w-5;p.y=ledge.platform.y-p.h;p.vy=0;p.ground=ledge.platform;p.ledge=null;p.ledgeCD=.3;}
+    else if(jumpQueued){
+      const s=ledge.platform,endX=ledge.side===1?Math.min(12,(s.w-p.w)/2):Math.max(s.w-p.w-12,(s.w-p.w)/2);
+      const target={x:s.x+endX,y:s.y-p.h,w:p.w,h:p.h};
+      if(s.w>=p.w&&!room.platforms.some(o=>o!==s&&o.gone<=0&&o.type!=='oneway'&&o.type!=='moving'&&overlap(target,o))){
+        p.climb={platform:s,startX:p.x-s.x,startY:p.y-s.y,endX,time:0};
+        p.ledgeMoveKey=keys.has('KeyA')?'KeyA':keys.has('KeyD')?'KeyD':null;
+        p.ledge=null;p.dashTime=0;p.vx=p.vy=0;jumpQueued=attackQueued=false;return;
+      }
+    }
     else if(down){p.ledge=null;p.vy=50;p.ledgeCD=.35;}
     else{p.y=ledge.platform.y+7;p.x=ledge.side===1?ledge.platform.x-p.w:ledge.platform.x+ledge.platform.w;p.vx=p.vy=0;}
     jumpQueued=false;

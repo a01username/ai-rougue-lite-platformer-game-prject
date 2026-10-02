@@ -189,3 +189,5 @@ Slower breakable-platform regeneration: off-platform timer recovery now runs at 
 L-room arm obstacles: selected intermediate crossing footholds become narrow solid buttresses extending down to the river shelf, with climbable sides and preserved landing heights. Ceiling outcrops break up the upper passage while reserving exit and nearby-platform clearance. Applies to mirrored, standard, long, and tall L rooms. Checked 151 generated L rooms containing 182 arm buttresses and 181 ceiling obstacles.
 
 Starting-room exit: each floor begins in a small room with a single upward connection. The first main-route step cannot go sideways, and special-room branches no longer originate from the start room. Verified across 80 generated floors.
+
+Ledge pull-up: jumping from a ledge grab now animates a 0.3-second lift and step onto the platform, tracking its position. Momentum is cleared and a held horizontal key must be released before walking again, preventing immediate walk-offs. Pull-up checks landing headroom; disappearing platforms and damage cancel it. Both grab directions, moving support, and input release checks passed.
