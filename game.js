@@ -135,17 +135,32 @@ function buildTracks(r){
   }
   return true;
 }
+function buildWallJumpRoute(r){
+  if(r.bossId)return;
+  // Replace intermediate footholds with tall narrow rock pillars. Their sides
+  // start below the launch ledge; their tops require a wall jump or ledge grab.
+  const wanted=r.type==='start'?1:Math.max(1,Math.floor(r.route.length/3));
+  let added=0;
+  for(let i=1;i<r.route.length-1&&added<wanted;i+=3){
+    const old=r.route[i],launch=r.route[i-1];
+    const top=launch.baseY-180;
+    const wall=platform(old.baseX+old.w/2-24,top,48,'solid',220);
+    wall.verticalWall=true;wall.routeWall=true;wall.launch=launch;
+    if(wall.y<85||r.platforms.some(s=>s!==old&&s!==launch&&s.type!=='moving'&&overlap(wall,s)))continue;
+    const index=r.platforms.indexOf(old);r.platforms[index]=wall;r.route[i]=wall;added++;
+  }
+}
 function addRockWalls(r,jumpCorridors){
   r.wallGrips={left:[],right:[]};
   for(const side of ['left','right']){
     // Some edges are sheer/open cliff faces; only visible rock patches grip.
-    if(Math.random()<.35)continue;
-    for(let y=110;y<r.floorY-70;y+=260)if(Math.random()<.65)r.wallGrips[side].push({y,h:120});
+    if(Math.random()<.15)continue;
+    for(let y=110;y<r.floorY-70;y+=220)if(Math.random()<.85)r.wallGrips[side].push({y,h:160});
   }
   const clear=r.platforms.slice(1).map(p=>{const b=platformBounds(p);return {x:b.x-35,y:b.y-190,w:b.w+70,h:b.h+210};});
   clear.push(...jumpCorridors);
   for(const [side,d]of Object.entries(r.doors||{}))clear.push({x:side==='left'?0:r.w-230,y:d.y-70,w:230,h:d.h+140});
-  const desired=r.size==='small'?1:r.size==='large'?4:2;let added=0;
+  const desired=r.size==='small'?2:isL(r)?5:r.size==='large'?5:3;let added=0;
   for(let attempt=0;attempt<140&&added<desired;attempt++){
     const w=32,h=pick([128,160,192]),x=Math.round(rand(65,r.w-97)/32)*32,y=Math.round(rand(170,r.floorY-h-50)/32)*32;
     const wall=platform(x,y,w,'solid',h);wall.verticalWall=true;
@@ -361,6 +376,7 @@ function generateRoom(r,size){
     r.route.push(s);r.platforms.push(s);
   }
   if(isL(r)){const corner=platform(mirroredL(r)?0:780,580,r.w-780,'solid',r.h-580);corner.shapeBoundary=true;r.platforms.push(corner);}
+  buildWallJumpRoute(r);
   const top=r.route.at(-1);r.topX=top.x+top.w/2-21;
   r.bottomX=clamp(r.route[0].x+r.route[0].w/2-21,85,r.w-127);
   r.spawnX=clamp(r.bottomX+(r.bottomX<r.w/2?160:-160),65,r.w-91);
