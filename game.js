@@ -114,25 +114,30 @@ function platformBounds(s){
 }
 function buildTracks(r){
   for(const s of r.platforms.filter(p=>p.type==='moving'&&!p.trackNodes)){
-    let nodes;
-    for(let attempt=0;attempt<20;attempt++){
-      const path=[{x:s.baseX,y:s.baseY+TRACK_TILE}];let col=0;
-      for(let row=1;row>=-2;row--){
-        if(attempt<19&&Math.random()<.7){const next=clamp(col+pick([-1,1]),-2,2);if(next!==col){col=next;path.push({x:s.baseX+col*TRACK_TILE,y:s.baseY+row*TRACK_TILE});}}
-        if(row>-2)path.push({x:s.baseX+col*TRACK_TILE,y:s.baseY+(row-1)*TRACK_TILE});
+    const index=r.route.indexOf(s),next=index>=0?r.route[index+1]:null;
+    const target=next||r.platforms.filter(p=>p!==s&&!p.shapeBoundary&&p.baseY<s.baseY-20).sort((a,b)=>Math.hypot(a.baseX-s.baseX,a.baseY-s.baseY)-Math.hypot(b.baseX-s.baseX,b.baseY-s.baseY))[0];
+    const dx=target?target.baseX+target.w/2-s.baseX-s.w/2:0,dy=target?s.baseY-target.baseY:100,dir=Math.sign(dx)||1;
+    const kinds=Math.abs(dx)>80&&dy>55?['diagonal','vertical','horizontal']:dy>80?['vertical','diagonal','horizontal']:['horizontal','diagonal','vertical'];
+    let chosen=null;
+    for(const kind of kinds){
+      for(const span of [96,64,48,32]){
+        const vx=kind==='vertical'?0:dir,vy=kind==='horizontal'?0:-1;
+        const path=[{x:s.baseX-vx*span/2,y:s.baseY-vy*span/2},{x:s.baseX+vx*span/2,y:s.baseY+vy*span/2}];
+        const steps=Math.ceil(Math.hypot(vx*span,vy*span)/8),clearance=r.bossId?68:44;
+        let safe=true;
+        for(let i=0;i<=steps;i++){
+          const t=i/steps,p={x:path[0].x+vx*span*t,y:path[0].y+vy*span*t};
+          if(p.x<40||p.x+s.w>r.w-40||p.y<80||p.y+s.h>=r.floorY||r.platforms.some(b=>b!==s&&b.type!=='oneway'&&b.type!=='moving'&&overlap({x:p.x,y:p.y-clearance,w:s.w,h:s.h+clearance},b))){safe=false;break;}
+        }
+        if(safe){chosen={path,kind};break;}
       }
-      const safe=path.every(p=>p.x>=40&&p.x+s.w<=r.w-40&&p.y>=80&&p.y+s.h<r.floorY&&
-        !r.platforms.some(b=>b!==s&&b.type!=='oneway'&&b.type!=='moving'&&overlap({x:p.x,y:p.y-44,w:s.w,h:s.h+44},b)));
-      if(safe){nodes=path;break;}
+      if(chosen)break;
     }
-    if(!nodes){
-      // A doorway can leave no safe room for a lift. Keep this existing
-      // climbing step fixed instead of routing a platform through rock.
-      s.type='oneway';s.x=s.baseX;s.y=s.baseY;s.travel=0;delete s.track;continue;
-    }
-    s.trackNodes=nodes;
-    s.trackLength=s.trackNodes.slice(1).reduce((n,p,i)=>n+Math.hypot(p.x-s.trackNodes[i].x,p.y-s.trackNodes[i].y),0);
-    s.x=s.trackNodes[0].x;s.y=s.trackNodes[0].y;s.travel=Math.max(...s.trackNodes.map(p=>Math.abs(p.x-s.baseX)));s.rise=64;
+    if(!chosen){s.type='oneway';s.x=s.baseX;s.y=s.baseY;s.travel=0;delete s.track;continue;}
+    s.trackNodes=chosen.path;s.trackKind=chosen.kind;s.track='purposeful';s.trackElapsed=0;
+    s.trackLength=Math.hypot(chosen.path[1].x-chosen.path[0].x,chosen.path[1].y-chosen.path[0].y);
+    s.x=chosen.path[0].x;s.y=chosen.path[0].y;
+    s.travel=Math.abs(chosen.path[1].x-chosen.path[0].x)/2;s.rise=Math.abs(chosen.path[1].y-chosen.path[0].y);
   }
   return true;
 }
@@ -442,9 +447,9 @@ function trapState(trap,time=tick){
     const travel=phase<2.3?0:phase<2.65?(phase-2.3)/.35:phase<3.15?1:1-(phase-3.15)/.85;
     return {x,y,phase,warning,active,body:{x:x-14,y:y-180+148*travel,w:28,h:32}};
   }
-  return {x,y,phase,warning,active,body:{x:x-16,y:y-92,w:32,h:92}};
+  return {x,y,phase,warning,active,body:{x:x-16,y:y-(trap.height||144),w:32,h:trap.height||144}};
 }
-function updateTraps(){
+function updateTraps(dt=1/120){
   for(const trap of room.traps||[]){
     if(trap.support.gone>0)continue;
     const state=trapState(trap),cycle=Math.floor((tick+trap.offset)/4);
@@ -453,7 +458,12 @@ function updateTraps(){
         trap.lastCycle=cycle;
         for(const dir of [-1,1])shots.push({x:state.x+dir*14-5,y:state.y-40,w:10,h:8,vx:dir*220,vy:0,hp:6,life:2,kind:'trapDart'});
       }
-    }else if((trap.type==='crusher'||state.active)&&overlap(player,state.body))damage(state.body);
+    }else if(trap.type==='vent'){
+      if(state.active&&overlap(player,state.body)&&!devFlight&&!player.climb){
+        player.ground=null;player.ledge=null;player.wall=0;
+        player.vy=Math.max(-Math.sqrt(2*PLAYER_PHYSICS.gravity*(trap.height||144)),player.vy-2400*dt);
+      }
+    }else if(trap.type==='crusher'&&overlap(player,state.body))damage(state.body);
   }
 }
 function drawTraps(){
@@ -472,8 +482,8 @@ function drawTraps(){
         if(s.warning){text('‹',s.x-24,s.y-25,18,color,'center');text('›',s.x+24,s.y-25,18,color,'center');}
       }else{
         for(let x=s.x-12;x<s.x+12;x+=8)rect(x,s.y-6,4,4,color);
-        if(s.active)for(let i=0;i<7;i++){const y=s.y-10-((tick*140+i*14)%82);rect(s.x-12+(i%3)*8,y,8,12,i%2?'#e0dfc5':'#9db9b5');}
-        else if(s.warning){rect(s.x-4,s.y-22,8,8,'#b4c6bb');text('!',s.x,s.y-32,12,color,'center');}
+        if(s.active){const height=trap.height||144;for(let i=0;i<Math.ceil(height/12);i++){const y=s.y-8-((tick*180+i*14)%(height-8));rect(s.x-12+(i%3)*8,y,8,12,i%2?'#ddf5e8':'#81bfc9');}}
+        else if(s.warning){rect(s.x-4,s.y-22,8,8,'#b4c6bb');text('↑',s.x,s.y-32,16,'#b9e8df','center');}
       }
     }
   }
@@ -791,7 +801,10 @@ function updatePlatforms(dt){
   room.debris=room.debris.filter(p=>p.life>0);
   for(const s of room.platforms){s.dx=s.dy=0;
     if(s.type==='moving'){
-      const cycle=(tick*62)%(s.trackLength*2),progress=cycle<=s.trackLength?cycle/s.trackLength:2-cycle/s.trackLength;
+      s.trackElapsed=(s.trackElapsed||0)+dt;
+      const duration=s.trackLength/70,pause=.3,half=duration+pause,cycle=s.trackElapsed%(half*2);
+      const t=clamp(((cycle<half?cycle:cycle-half)-pause)/duration,0,1),ease=(1-Math.cos(t*Math.PI))/2;
+      const progress=cycle<half?ease:1-ease;
       const next=trackPoint(s,progress*2-1);s.dx=next.x-s.x;s.dy=next.y-s.y;s.x=next.x;s.y=next.y;
     }
     if(s.type==='break'){
@@ -1148,7 +1161,7 @@ function update(dt){
     if(transition.time>=(transition.exit.finish?2.6:.44)){transition=null;jumpQueued=attackQueued=false;}
     return;
   }
-  tick+=dt;exitLock-=dt;updatePlatforms(dt);updatePlayer(dt);updateFallHazards();updateTraps();updateEnemies(dt);updateRoomHearts(dt);
+  tick+=dt;exitLock-=dt;updatePlatforms(dt);updatePlayer(dt);updateFallHazards();updateTraps(dt);updateEnemies(dt);updateRoomHearts(dt);
   if(attack){attack.time-=dt;if(attack.time<=0)attack=null;}
   for(const n of numbers){n.y-=dt*45;n.life-=dt;}numbers=numbers.filter(n=>n.life>0);
   // Cross the physical room boundary; approaching a passage is not enough.
