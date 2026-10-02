@@ -273,6 +273,8 @@ function tryBuildFloor(){
     }
     if(Math.random()<.55){const shaft=attach(current,'up','tall');if(shaft)current=shaft;}
     current=attach(current,'up',pick(['small','large',...L_SHAPES]))||attach(current,'up','small')||current;
+    // Give each climbing section a usable side junction, not just the summit.
+    if(isL(current)||current.size==='tall'){const junction=attach(current,'up','small');if(!junction)return null;current=junction;}
   }
   // Keep an ordinary junction before the summit so side branches can fit
   // even when the preceding main route consists entirely of vertical rooms.
@@ -282,7 +284,11 @@ function tryBuildFloor(){
   const branchOrigins=new Set();
   for(const type of ['item','shop']){
     let placed=false;
-    for(const source of shuffle(main).sort((a,b)=>Number(branchOrigins.has(a))-Number(branchOrigins.has(b)))){
+    for(const source of shuffle(main).filter(r=>!branchOrigins.has(r)).sort((a,b)=>{
+      if(!branchOrigins.size)return 0;
+      const distance=r=>Math.min(...[...branchOrigins].map(o=>Math.abs(main.indexOf(r)-main.indexOf(o))));
+      return distance(b)-distance(a);
+    })){
       for(const direction of shuffle(source.size==='long'?['left','right']:source.size==='tall'||isL(source)?['up']:['left','right','up'])){
         if(source===current&&direction==='up')continue;
         for(let attempt=0;attempt<12&&!placed;attempt++){
@@ -309,6 +315,7 @@ function tryBuildFloor(){
       if(placed)break;
     }
   }
+  if(branchOrigins.size!==2)return null;
   if(!["item","shop"].every(type=>[...rooms.values()].some(r=>r.type===type)))return null;
   // Place the summit after side routes so even high main-path rooms can branch.
   const specialTop=Math.max(...[...rooms.values()].filter(r=>r.type==='item'||r.type==='shop').map(r=>r.y+r.gridH));
