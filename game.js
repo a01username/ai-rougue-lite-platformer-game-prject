@@ -1293,13 +1293,21 @@ function drawMap(){
   // No solid panel: the room remains visible behind both map sizes.
   text(mapExpanded?'FLOOR '+String(floor).padStart(2,'0')+(devMode?' · CLICK ROOM TO TELEPORT':' · MAP'):'MAP',box.x,box.y-16,mapExpanded?13:10,'rgba(220,243,156,.65)');
   text(mapExpanded?'TAB · COLLAPSE':'TAB · ENLARGE',box.x+box.w,box.y-16,10,'rgba(220,243,156,.55)','right');
-  for(const a of nodes)for(const b of nodes){
-    if((a.room.x<b.room.x||a.room.y<b.room.y)&&Object.values(a.room.links).includes(b.room)&&(devMode||a.room.visited||b.room.visited))
-    {
-      const color=mapExpanded?'rgba(196,214,164,.45)':'rgba(196,214,164,.23)',width=mapExpanded?3:2;
-      const horizontal=a.room.links.left===b.room||a.room.links.right===b.room;
-      const bendX=horizontal?b.x:a.x,bendY=horizontal?a.y:b.y;
-      line(a.x,a.y,bendX,bendY,color,width);line(bendX,bendY,b.x,b.y,color,width);
+  const seen=new Set();
+  for(const a of nodes)for(const [direction,neighbor] of Object.entries(a.room.links)){
+    const b=nodes.find(n=>n.room===neighbor);if(!b)continue;
+    const pair=[key(a.room.x,a.room.y),key(b.room.x,b.room.y)].sort().join('|');
+    if(seen.has(pair)||!(devMode||a.room.visited||b.room.visited))continue;seen.add(pair);
+    const port=a.room.ports[direction],gap=cell*.09;
+    let x,y;
+    if(direction==='left'||direction==='right'){
+      x=a.x+(direction==='left'?-1:1)*a.room.gridW*cell/2;
+      y=a.y+a.room.gridH*cell/2-(port.altitude/580-a.room.y)*cell;
+      line(x-gap,y,x+gap,y,'rgba(196,214,164,.6)',mapExpanded?2:1);
+    }else{
+      x=a.x-a.room.gridW*cell/2+(port.worldX/780-a.room.x)*cell;
+      y=a.y+(direction==='up'?-1:1)*a.room.gridH*cell/2;
+      line(x,y-gap,x,y+gap,'rgba(196,214,164,.6)',mapExpanded?2:1);
     }
   }
   for(const n of nodes){
@@ -1307,12 +1315,21 @@ function drawMap(){
     const w=cell*(r.gridW-.18),h=cell*(r.gridH-.18);
     const alpha=mapExpanded?.75:.4;
     const color=current?`rgba(220,243,156,${alpha})`:revealed?`rgba(115,142,102,${alpha*.65})`:'rgba(98,118,92,.12)';
-    if(isL(r)){const armH=h/r.gridH,shaftW=w/r.gridW;rect(n.x-w/2,n.y-h/2,w,armH,color);rect(mirroredL(r)?n.x+w/2-shaftW:n.x-w/2,n.y-h/2+armH,shaftW,h-armH,color);}else rect(n.x-w/2,n.y-h/2,w,h,color);
+    const inset=cell*.09,left=n.x-r.gridW*cell/2+inset,right=n.x+r.gridW*cell/2-inset;
+    const top=n.y-r.gridH*cell/2+inset,bottom=n.y+r.gridH*cell/2-inset;
+    const elbowY=n.y-r.gridH*cell/2+cell-inset;
+    const elbowX=mirroredL(r)?n.x+r.gridW*cell/2-cell+inset:n.x-r.gridW*cell/2+cell-inset;
+    const outline=!isL(r)?[[left,top],[right,top],[right,bottom],[left,bottom]]:mirroredL(r)?
+      [[left,top],[right,top],[right,bottom],[elbowX,bottom],[elbowX,elbowY],[left,elbowY]]:
+      [[left,top],[right,top],[right,elbowY],[elbowX,elbowY],[elbowX,bottom],[left,bottom]];
+    ctx.beginPath();outline.forEach(([x,y],i)=>i?ctx.lineTo(x,y):ctx.moveTo(x,y));ctx.closePath();
+    ctx.fillStyle=color;ctx.fill();
     ctx.strokeStyle=current?'rgba(238,255,195,.9)':revealed?'rgba(195,215,164,.48)':'rgba(165,188,143,.26)';ctx.lineWidth=current?2:1;
-    if(!revealed)ctx.setLineDash([3,3]);if(isL(r)){const flip=mirroredL(r)?-1:1;ctx.beginPath();for(const [i,[x,y]] of [[-w/2,-h/2],[w/2,-h/2],[w/2,-h/2+h/r.gridH],[-w/2+w/r.gridW,-h/2+h/r.gridH],[-w/2+w/r.gridW,h/2],[-w/2,h/2]].entries()){if(i===0)ctx.moveTo(n.x+x*flip,n.y+y);else ctx.lineTo(n.x+x*flip,n.y+y);}ctx.closePath();ctx.stroke();}else ctx.strokeRect(n.x-w/2,n.y-h/2,w,h);ctx.setLineDash([]);
+    if(!revealed)ctx.setLineDash([3,3]);ctx.stroke();ctx.setLineDash([]);
+    const markerX=isL(r)?(mirroredL(r)?right-cell*.41:left+cell*.41):n.x;
     const marker=roomMarker(r);
-    if(marker)drawRoomMarker(marker,n.x,n.y,Math.max(8,Math.min(18,cell*.45)));
-    else if(current){ctx.fillStyle='#f0ffd0';ctx.beginPath();ctx.arc(n.x,n.y,Math.max(2,cell*.06),0,Math.PI*2);ctx.fill();}
+    if(marker)drawRoomMarker(marker,markerX,n.y,Math.max(8,Math.min(18,cell*.45)));
+    else if(current){ctx.fillStyle='#f0ffd0';ctx.beginPath();ctx.arc(markerX,n.y,Math.max(2,cell*.06),0,Math.PI*2);ctx.fill();}
     else if(revealed&&cell>=18){const symbol={start:'S',item:'I',shop:'$',finish:'F'}[r.type];if(symbol)text(symbol,n.x,n.y+cell*.12,Math.max(8,cell*.24),'rgba(229,241,202,.8)','center');}
   }
   if(mapExpanded)text('OUTLINE: YOU   ·   DIAMOND: ITEM   ·   $: SHOP   ·   SKULL: BOSS',W/2,box.y+box.h+30,11,'rgba(219,234,193,.8)','center');
