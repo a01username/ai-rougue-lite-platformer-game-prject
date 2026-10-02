@@ -112,7 +112,7 @@ function platformBounds(s){
   return {x,y,w:Math.max(...nodes.map(p=>p.x))-x+s.w,h:Math.max(...nodes.map(p=>p.y))-y+s.h};
 }
 function buildTracks(r){
-  for(const s of r.platforms.filter(p=>p.type==='moving')){
+  for(const s of r.platforms.filter(p=>p.type==='moving'&&!p.trackNodes)){
     let nodes;
     for(let attempt=0;attempt<20;attempt++){
       const path=[{x:s.baseX,y:s.baseY+TRACK_TILE}];let col=0;
@@ -316,6 +316,7 @@ function tryBuildFloor(){
   return start;
 }
 function connectLanding(r,target){
+  if(r.platforms.some(s=>s.access&&Math.abs(s.y-target.y)<1&&s.x<=target.x+target.w/2&&s.x+s.w>=target.x+target.w/2))return;
   // Finish the room's climb with rock ledges, not a separate thin-platform ramp.
   const anchors=r.route.filter(s=>s.type!=='moving');
   const source=anchors.reduce((best,s)=>Math.abs(s.y-target.y)<Math.abs(best.y-target.y)?s:best,anchors[0]);
@@ -372,109 +373,22 @@ function configurePassages(r){
   r.spawnX=clamp(r.bottomX+(r.bottomX<r.w/2?160:-160),65,r.w-91);
 }
 function generateRoom(r,size){
-  if(r.bossId&&!r.generatingBoss){
-    const originalRandom=Math.random;let seed=17011+BOSSES.findIndex(b=>b.id===(roomBossSpec(r).family||r.bossId))*1009+(roomBossSpec(r).tier||0)*3011+r.layout*97;
-    Math.random=()=>{seed=(Math.imul(seed,1664525)+1013904223)>>>0;return seed/4294967296;};r.generatingBoss=true;
-    try{generateRoom(r,size);}finally{Math.random=originalRandom;delete r.generatingBoss;}
-    return;
-  }
   r.size=size;r.links??={};Object.assign(r,ROOM_SIZES[size]);r.floorY=r.h-40;
-  r.platforms=[platform(0,r.floorY,r.w,'solid',40)];r.route=[];r.enemies=[];r.hearts=[];r.debris=[];r.clearRewarded=false;
-  // The main route includes moving and collapsing steps. Collapsed steps
-  // return, and the final landing stays fixed so every exit remains usable.
-  const rows=Math.max(3,Math.floor((r.floorY-140)/(isL(r)?126:112))), rise=(r.floorY-140)/rows;
-  let center=isL(r)?(mirroredL(r)?r.w-350:350):rand(190,r.w-190), drift=pick([-1,1]);
-  for(let i=0;i<rows;i++){
-    const previous=r.route.at(-1);
-    if(previous){
-      if(Math.random()<.35)drift*=-1;
-      center+=drift*rand(195,205);
-      if(center<195||center>r.w-195){drift*=-1;center=previous.x+previous.w/2+drift*rand(195,205);}
-      center=clamp(center,195,r.w-195);
-    }
-    if(isL(r)&&r.floorY-rise*(i+1)>420)center=mirroredL(r)?clamp(center,r.w-550,r.w-190):clamp(center,190,550);
-    const width=isL(r)?rand(104,128):rand(180,190), y=r.floorY-rise*(i+1);
-    const type=i===rows-1?'oneway':isL(r)?(i%2===0?'break':'moving'):i%3===0?'break':i%3===1?'moving':'oneway';
-    const s=platform(center-width/2,y,width,type,type==='break'?20:10);
-    if(type==='moving')configureTrack(s);
-    r.route.push(s);r.platforms.push(s);
-  }
-  if(isL(r)){const corner=platform(mirroredL(r)?0:780,580,r.w-780,'solid',r.h-580);corner.shapeBoundary=true;r.platforms.push(corner);}
-  buildWallJumpRoute(r);
-  const top=r.route.at(-1);r.topX=top.x+top.w/2-21;
-  r.bottomX=clamp(r.route[0].x+r.route[0].w/2-21,85,r.w-127);
-  r.spawnX=clamp(r.bottomX+(r.bottomX<r.w/2?160:-160),65,r.w-91);
-  const jumpCorridors=r.route.map((s,i)=>{
-    const previous=r.route[i-1],fromX=previous?previous.x+previous.w/2:s.x+s.w/2,toX=s.x+s.w/2;
-    const fromY=previous?previous.y:r.floorY;
-    if(!previous)return {x:s.x-110,y:fromY-195,w:s.w+220,h:195};
-    return {x:Math.min(fromX,toX)-40,y:fromY-195,w:Math.abs(toX-fromX)+80,h:195};
-  });
-  // Add branches outward from reachable steps, with clear space around them.
-  const types=shuffle(['solid','break','moving']);
-  for(const anchor of shuffle(r.route)){
-    if(isL(r)&&Math.random()<.7)continue;
-    const side=pick([-1,1]), width=rand(115,160), travel=types[0]==='moving'?60:0;
-    const x=side<0?anchor.x-width-45-travel:anchor.x+anchor.w+45+travel;
-    const candidate=platform(x,anchor.y,width,types[0],types[0]==='moving'?10:20);
-    candidate.travel=travel;
-    const bounds={x:x-travel-16,y:anchor.y-180,w:width+travel*2+32,h:225};
-    if(x-travel<45||x+width+travel>r.w-45||r.platforms.some(s=>overlap(bounds,platformBounds(s)))||jumpCorridors.some(c=>overlap(bounds,c)))continue;
-    // Optional branches keep their generous horizontal clearance.
-    if(candidate.type==='moving')configureTrack(candidate);
-    r.platforms.push(candidate);types.push(types.shift());
-  }
-  // Long rooms also get several low, individually reachable islands.
-  for(let x=100;x<r.w-170;x+=rand(210,285)){
-    const candidate=platform(x,r.floorY-rand(65,105),rand(120,170),pick(['solid','oneway','break']),20);
-    const bounds={x:candidate.x-95,y:r.floorY-210,w:candidate.w+190,h:210};
-    if(!jumpCorridors.some(c=>overlap(bounds,c))&&!r.platforms.slice(1).some(s=>overlap(bounds,platformBounds(s))))r.platforms.push(candidate);
-  }
-  configurePassages(r);
-  openFloorAccess(r);jumpCorridors.push(r.floorAccess);
-  buildArmObstacles(r);
-  buildTracks(r);
-  addRockWalls(r,jumpCorridors);
-  // A drop-through foothold makes the floor route usable in both directions.
-  r.floorStep=platform(r.floorAccess.x,r.floorY-65,r.floorAccess.w,'oneway',10);
-  r.platforms.push(r.floorStep);
-  if(r.bossId){createBoss(r);return;}
-  if(r.type!=='normal')return;
-  const supports=shuffle(r.platforms.slice(1).filter(s=>!s.shapeBoundary));
-  const count=Math.min(supports.length,(isL(r)?Math.min(11,r.gridW+r.gridH+3):({small:3,long:5,large:7,tall:7})[size]));
-  let kinds=[];
-  for(const s of supports){
-    if(r.enemies.length>=count)break;
-    if(Math.abs(s.x+s.w/2-(r.topX+21))<100&&s.y<240)continue;
-    if(!kinds.length)kinds=shuffle(['crawler','ground','air','dive']);
-    const chosen=kinds.pop(),type=s.verticalWall?'crawler':s.type==='break'||s.type==='moving'?pick(['air','dive']):chosen;
-    const flying=type==='air'||type==='dive';
-    let x=rand(s.x+36,s.x+s.w-64),y=s.y-22;
-    if(type==='crawler'){
-      // Reserve the entire patrol, including sides and underside.
-      const patrol={x:s.x-28,y:s.y-28,w:s.w+56,h:s.h+56};
-      if(patrol.x<25||patrol.x+patrol.w>r.w-25||patrol.y<20||patrol.y+patrol.h>r.floorY||r.platforms.some(b=>b!==s&&overlap(patrol,platformBounds(b))))continue;
-      x=s.x+s.w/2-14;y=s.y-28;
-    }
-    if(flying){
-      let spot=null;
-      for(let attempt=0;attempt<30;attempt++){
-        const fx=clamp(s.x+s.w/2+pick([-1,1])*rand(45,125)-14,85,r.w-113);
-        const fy=s.y-rand(140,190);
-        if(fy<70)continue;
-        // Reserve open air for the body, wings, and entire idle flight motion.
-        const airspace={x:fx-60,y:fy-32,w:148,h:110};
-        if(r.platforms.some(b=>overlap(airspace,platformBounds(b))))continue;
-        if(r.enemies.some(e=>Math.hypot(e.homeX-fx,e.homeY-fy)<85))continue;
-        spot={x:fx,y:fy};break;
-      }
-      if(!spot)continue;
-      x=spot.x;y=spot.y;
-    }
-    const e=enemy(type,x,y,s);
-    if(r.platforms.some(b=>b!==s&&overlap({x:x-34,y:y-14,w:96,h:50},b)))continue;
-    r.enemies.push(e);
-  }
+  const bank=ROOM_LAYOUTS[r.bossId||size];
+  r.layout=r.layout??Math.floor(Math.random()*bank.length);
+  const data=JSON.parse(JSON.stringify(bank[r.layout%bank.length]));
+  r.platforms=data.platforms;
+  function restore(o){for(const [key,value]of Object.entries(o))if(value&&typeof value==='object'&&'platformIndex'in value)o[key]=r.platforms[value.platformIndex];}
+  r.platforms.forEach(restore);data.enemies.forEach(restore);
+  r.route=data.route.map(i=>r.platforms[i]);r.enemies=r.type==='normal'?data.enemies:[];
+  r.hearts=[];r.debris=[];r.clearRewarded=false;r.wallGrips=data.wallGrips;r.floorAccess=data.floorAccess;r.floorStep=r.platforms[data.floorStep];
+  r.topX=data.topX;r.bottomX=data.bottomX;r.spawnX=data.spawnX;
+  // Only doorway approach pieces adapt to the floor graph. Interior geometry,
+  // enemy positions, and moving tracks come directly from the saved layout.
+  const random=Math.random;let seed=7919+r.layout*97;
+  Math.random=()=>{seed=(Math.imul(seed,1664525)+1013904223)>>>0;return seed/4294967296;};
+  try{configurePassages(r);buildTracks(r);}finally{Math.random=random;}
+  if(r.bossId)createBoss(r);
 }
 function updateCamera(){
   camera.x=clamp(player.x+player.w/2-W/2,0,Math.max(0,room.w-W));
@@ -1058,16 +972,16 @@ function exits(includeLocked=false){
   const locked=!!room.boss&&room.boss.hp>0;
   return locked?(includeLocked?list.map(e=>({...e,locked:true})):[]):list;
 }
-function beginTransition(exit){transition={exit,time:0,switched:false};attack=null;jumpQueued=attackQueued=false;}
+function beginTransition(exit){transition={exit,time:0,switched:false,nextFloor:floor+1};attack=null;jumpQueued=attackQueued=false;}
 function update(dt){
   if(transition){
     transition.time+=dt;
-    if(!transition.switched&&transition.time>=.22){
+    if(!transition.switched&&transition.time>=(transition.exit.finish?.65:.22)){
       const e=transition.exit;
       if(e.finish){if(floor>=RUN_FLOORS){transition=null;setMode('won');return;}floor++;enterRoom(buildFloor());}else enterRoom(room.links[e.dx<0?'left':e.dx>0?'right':e.dy>0?'up':'down'],e.from);
       transition.switched=true;
     }
-    if(transition.time>=.44){transition=null;jumpQueued=attackQueued=false;}
+    if(transition.time>=(transition.exit.finish?2.6:.44)){transition=null;jumpQueued=attackQueued=false;}
     return;
   }
   tick+=dt;exitLock-=dt;updatePlatforms(dt);updatePlayer(dt);updateEnemies(dt);updateRoomHearts(dt);
@@ -1397,8 +1311,18 @@ function draw(){
   drawMap();
   if(room.boss&&room.boss.hp>0){text(room.boss.name,W/2,98,14,'#edc79a','center');rect(W/2-140,108,280,5,'#2a3439');rect(W/2-140,108,280*room.boss.hp/room.boss.max,5,'#d9a979');text(roomBossSpec(room).hint,W/2,130,10,'#cfdbcf','center');}
   if(transition){
-    const t=transition.time/.44;
-    ctx.globalAlpha=Math.sin(Math.PI*clamp(t,0,1));rect(0,0,W,H,'#0b1412');ctx.globalAlpha=1;
+    if(transition.exit.finish){
+      const time=transition.time,opacity=Math.min(1,time/.5,(2.6-time)/.5);
+      ctx.globalAlpha=clamp(opacity,0,1);rect(0,0,W,H,'#0b1412');
+      if(time>.5&&time<2.1){
+        const next=transition.nextFloor,biome=next>=7?'MOUNTAIN INTERIOR':MOUNTAIN_SECTIONS[[0,2,5][Math.floor((next-1)/2)]].name;
+        text(next===7?'INTO THE MOUNTAIN':'THE CLIMB CONTINUES',W/2,H/2-60,16,'#9aaa70','center');
+        text('FLOOR '+String(next).padStart(2,'0')+' / '+RUN_FLOORS,W/2,H/2-12,30,'#e4edc7','center');
+        text(biome,W/2,H/2+28,20,'#b8d4cb','center');
+        for(let i=1;i<=RUN_FLOORS;i++)rect(W/2-104+(i-1)*28,H/2+65,16,8,i<=next?'#b9cf8b':'#34443d');
+      }
+      ctx.globalAlpha=1;
+    }else{const t=transition.time/.44;ctx.globalAlpha=Math.sin(Math.PI*clamp(t,0,1));rect(0,0,W,H,'#0b1412');ctx.globalAlpha=1;}
   }
 }
 function frame(now){
