@@ -436,6 +436,9 @@ function generateRoom(r,size){
   try{configurePassages(r);buildTracks(r);}finally{Math.random=random;}
   separateRoomPlatforms(r);
   r.traps=r.type==='normal'?(data.traps||[]).filter(t=>r.platforms.includes(data.platforms[t.supportIndex])).map(t=>({...t,support:data.platforms[t.supportIndex],lastCycle:-1})):[];
+  for(const trap of r.traps)if(trap.type==='crusher'){
+    const body=trapState(trap).body;trap.collider=platform(body.x,body.y,body.w,'solid',body.h);trap.collider.trapCollider=trap;r.platforms.push(trap.collider);
+  }
   configureFallHazards(r);
   if(r.bossId)createBoss(r);
 }
@@ -454,6 +457,12 @@ function updateTraps(dt=1/120){
     if(trap.support.gone>0)continue;
     const state=trapState(trap),cycle=Math.floor((tick+trap.offset)/4);
     if(trap.type==='dart'){
+      trap.disabled=Math.max(0,(trap.disabled||0)-dt);
+      const turret={x:state.x-16,y:state.y-40,w:32,h:40};
+      if(attack&&attack.time>0&&!attack.hit.has(trap)&&overlap(attackBox(),turret)){
+        attack.hit.add(trap);trap.disabled=6;trap.lastCycle=cycle;
+      }
+      if(trap.disabled>0){trap.lastCycle=cycle;continue;}
       if(state.active&&trap.lastCycle!==cycle){
         trap.lastCycle=cycle;
         for(const dir of [-1,1])shots.push({x:state.x+dir*14-5,y:state.y-40,w:10,h:8,vx:dir*220,vy:0,hp:6,life:2,kind:'trapDart'});
@@ -463,13 +472,13 @@ function updateTraps(dt=1/120){
         player.ground=null;player.ledge=null;player.wall=0;
         player.vy=Math.max(-Math.sqrt(2*PLAYER_PHYSICS.gravity*(trap.height||144)),player.vy-2400*dt);
       }
-    }else if(trap.type==='crusher'&&overlap(player,state.body))damage(state.body);
+    }else if(trap.type==='crusher'&&state.active&&overlap(player,{x:state.body.x,y:state.body.y+state.body.h-4,w:state.body.w,h:6}))damage(state.body);
   }
 }
 function drawTraps(){
   for(const trap of room.traps||[]){
     if(trap.support.gone>0)continue;
-    const s=trapState(trap),color=s.warning?'#ffd78a':s.active?'#ef9567':'#819695';
+    const s=trapState(trap),color=trap.disabled>0?'#485457':s.warning?'#ffd78a':s.active?'#ef9567':'#819695';
     if(trap.type==='crusher'){
       line(s.x,s.y-190,s.x,s.body.y,'#687779',4);
       rect(s.body.x,s.body.y,s.body.w,s.body.h,'#59656d');rect(s.body.x+4,s.body.y+4,20,8,color);
@@ -479,7 +488,8 @@ function drawTraps(){
       rect(s.x-16,s.y-8,32,8,'#42525a');
       if(trap.type==='dart'){
         rect(s.x-12,s.y-40,24,32,'#59656d');rect(s.x-16,s.y-35,32,6,color);
-        if(s.warning){text('‹',s.x-24,s.y-25,18,color,'center');text('›',s.x+24,s.y-25,18,color,'center');}
+        if(trap.disabled>0){line(s.x-6,s.y-30,s.x+6,s.y-18,'#859092',2);line(s.x+6,s.y-30,s.x-6,s.y-18,'#859092',2);rect(s.x-12,s.y-46,24*(1-trap.disabled/6),3,'#859092');}
+        if(s.warning&&!(trap.disabled>0)){text('‹',s.x-24,s.y-25,18,color,'center');text('›',s.x+24,s.y-25,18,color,'center');}
       }else{
         for(let x=s.x-12;x<s.x+12;x+=8)rect(x,s.y-6,4,4,color);
         if(s.active){const height=trap.height||144;for(let i=0;i<Math.ceil(height/12);i++){const y=s.y-8-((tick*180+i*14)%(height-8));rect(s.x-12+(i%3)*8,y,8,12,i%2?'#ddf5e8':'#81bfc9');}}
@@ -800,6 +810,17 @@ function updatePlatforms(dt){
   for(const p of room.debris){p.life-=dt;p.vy+=420*dt;p.x+=p.vx*dt;p.y+=p.vy*dt;}
   room.debris=room.debris.filter(p=>p.life>0);
   for(const s of room.platforms){s.dx=s.dy=0;
+    if(s.trapCollider){
+      const trap=s.trapCollider,next=trapState(trap).body,oldY=s.y;
+      s.gone=trap.support.gone>0?1:0;s.dx=next.x-s.x;s.dy=next.y-s.y;s.x=next.x;s.y=next.y;
+      if(s.gone<=0&&!devFlight&&player.ground!==s&&overlap(player,s)){
+        if(s.dy>0&&player.y>=oldY+s.h-8)damage(s);
+        const choices=[{x:s.x-player.w,y:player.y},{x:s.x+s.w,y:player.y},{x:player.x,y:s.y+s.h}].sort((a,b)=>Math.abs(a.x-player.x)+Math.abs(a.y-player.y)-Math.abs(b.x-player.x)-Math.abs(b.y-player.y));
+        const free=choices.find(p=>!room.platforms.some(o=>o.gone<=0&&o.type!=='oneway'&&o.type!=='moving'&&overlap({...player,...p},o)));
+        if(free){player.x=free.x;player.y=free.y;player.vx=player.vy=0;player.ledge=player.climb=null;}
+      }
+      continue;
+    }
     if(s.type==='moving'){
       s.trackElapsed=(s.trackElapsed||0)+dt;
       const duration=s.trackLength/70,pause=.3,half=duration+pause,cycle=s.trackElapsed%(half*2);
@@ -1243,6 +1264,7 @@ function drawMidground(){
   // Recessed rock buttresses share the ledges' positions but never collide.
   // Muted, unlined faces distinguish them from playable surfaces.
   for(const s of room.platforms.slice(1)){
+    if(s.trapCollider)continue;
     if(s.type==='moving'||s.type==='break'||s.verticalWall)continue;
     const x=s.x+8,w=Math.max(16,s.w-16),y=s.y+s.h;
     const foot=room.floorY;
@@ -1277,6 +1299,7 @@ function drawWaterfalls(){
 function drawPlatforms(){
   const t=mountainTheme();
   for(const original of room.platforms){
+    if(original.trapCollider)continue;
     const s={...original,x:Math.round(original.x/4)*4,y:Math.round(original.y/4)*4};
     if(s.type==='moving'){
       ctx.strokeStyle=t.edge;ctx.globalAlpha=.55;ctx.lineWidth=2;ctx.beginPath();
