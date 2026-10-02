@@ -565,6 +565,18 @@ function applyRiverCurrent(p,dt){
   if(overlap(p,water.fall)){p.vy=Math.min(850,p.vy+4200*dt);p.inCurrent=true;}
   if(overlap(p,water.pool)){p.vx+=water.direction*1000*dt;p.inCurrent=true;}
 }
+function ledgeLandingOffset(p,s,side){
+  const center=(s.w-p.w)/2;
+  const preferred=s.w<p.w+24?center:side===1?12:s.w-p.w-12;
+  // Narrow ledges can support the player's middle even when the sprite overhangs.
+  const options=[preferred,center,0,s.w-p.w];
+  for(const x of options){
+    const target={x:s.x+x,y:s.y-p.h,w:p.w,h:p.h};
+    if(Math.min(target.x+p.w,s.x+s.w)-Math.max(target.x,s.x)<Math.min(8,s.w))continue;
+    if(!room.platforms.some(o=>o!==s&&o.gone<=0&&o.type!=='oneway'&&o.type!=='moving'&&overlap(target,o)))return x;
+  }
+  return null;
+}
 function updateLedgeClimb(p,dt){
   const c=p.climb,s=c.platform;
   if(s.gone>0){p.climb=null;p.ledgeCD=.3;return false;}
@@ -607,9 +619,8 @@ function updatePlayer(dt){
     const ledge=p.ledge;
     if(ledge.platform.gone>0){p.ledge=null;p.ledgeCD=.25;}
     else if(jumpQueued){
-      const s=ledge.platform,endX=ledge.side===1?Math.min(12,(s.w-p.w)/2):Math.max(s.w-p.w-12,(s.w-p.w)/2);
-      const target={x:s.x+endX,y:s.y-p.h,w:p.w,h:p.h};
-      if(s.w>=p.w&&!room.platforms.some(o=>o!==s&&o.gone<=0&&o.type!=='oneway'&&o.type!=='moving'&&overlap(target,o))){
+      const s=ledge.platform,endX=ledgeLandingOffset(p,s,ledge.side);
+      if(endX!==null){
         p.climb={platform:s,startX:p.x-s.x,startY:p.y-s.y,endX,time:0};
         p.ledgeMoveKey=keys.has('KeyA')?'KeyA':keys.has('KeyD')?'KeyD':null;
         p.ledge=null;p.dashTime=0;p.vx=p.vy=0;jumpQueued=attackQueued=false;return;
@@ -633,7 +644,7 @@ function updatePlayer(dt){
   applyRiverCurrent(p,dt);
   const support=p.ground;p.wall=0;
   p.x+=p.vx*dt;
-  if(crouch&&!p.inCurrent&&support&&p.drop<=0&&p.vy>=0&&p.y+p.h<=support.y+3){p.x=clamp(p.x,support.x,support.x+support.w-p.w);}
+  if(crouch&&!p.inCurrent&&support&&p.drop<=0&&p.vy>=0&&p.y+p.h<=support.y+3){p.x=support.w<p.w?support.x+(support.w-p.w)/2:clamp(p.x,support.x,support.x+support.w-p.w);}
   const passages=exits(),leftOpen=passages.some(e=>e.dx===-1&&p.y>=e.y&&p.y+p.h<=e.y+e.h+1),rightOpen=passages.some(e=>e.dx===1&&p.y>=e.y&&p.y+p.h<=e.y+e.h+1);
   const bottom=passages.find(e=>e.dy===-1);
   if(crouch&&support===room.platforms[0]&&bottom){
@@ -686,7 +697,7 @@ function updatePlayer(dt){
   if(!p.ground&&p.vy>=0&&p.ledgeCD<=0&&!down&&p.hitLock<=0){
     for(const s of room.platforms){
       if(s.gone>0||s.y>=room.floorY)continue;
-      const side=p.x+p.w<=s.x+9&&p.x+p.w>=s.x-9?1:p.x>=s.x+s.w-9&&p.x<=s.x+s.w+9?-1:0;
+      const side=direction===1&&Math.abs(p.x+p.w-s.x)<=9?1:direction===-1&&Math.abs(p.x-s.x-s.w)<=9?-1:0;
       if(side&&direction===side&&p.y>=s.y-15&&p.y<=s.y+16){p.ledge={platform:s,side};p.vx=p.vy=0;break;}
     }
   }
