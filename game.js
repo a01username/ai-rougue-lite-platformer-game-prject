@@ -399,7 +399,30 @@ function generateRoom(r,size){
   const random=Math.random;let seed=7919+r.layout*97;
   Math.random=()=>{seed=(Math.imul(seed,1664525)+1013904223)>>>0;return seed/4294967296;};
   try{configurePassages(r);buildTracks(r);}finally{Math.random=random;}
+  configureFallHazards(r);
   if(r.bossId)createBoss(r);
+}
+function configureFallHazards(r){
+  r.hazards=[];if(!isL(r))return;
+  const left=mirroredL(r)?r.w-780+28:28,right=mirroredL(r)?r.w-28:752;
+  const safe=[{x:r.spawnX-44,end:r.spawnX+70},{x:r.bottomX-45,end:r.bottomX+90}].sort((a,b)=>a.x-b.x);
+  let cursor=left;
+  for(const gap of safe){if(gap.x>cursor+24)r.hazards.push({x:cursor,y:r.floorY-14,w:Math.min(gap.x,right)-cursor,h:14});cursor=Math.max(cursor,gap.end);}
+  if(right>cursor+24)r.hazards.push({x:cursor,y:r.floorY-14,w:right-cursor,h:14});
+}
+function updateFallHazards(){
+  if(devMode||mode!=='playing')return;
+  const hazard=room.hazards?.find(h=>overlap(player,h));if(!hazard)return;
+  damage(hazard);
+  if(mode==='dead')return;
+  const p=player;p.x=room.spawnX;p.y=room.floorY-p.h;p.vx=p.vy=0;p.ground=room.platforms[0];p.climb=p.ledge=null;p.wall=0;p.dashTime=0;p.drop=0;p.ledgeCD=.3;
+  jumpQueued=attackQueued=false;attack=null;
+}
+function drawFallHazards(){
+  for(const h of room.hazards||[]){
+    rect(h.x,h.y+10,h.w,4,'#783e45');
+    for(let x=h.x;x+12<=h.x+h.w;x+=12)polygon([[x,h.y+12],[x+6,h.y],[x+12,h.y+12]],'#e8c7bb');
+  }
 }
 function updateCamera(){
   camera.x=clamp(player.x+player.w/2-W/2,0,Math.max(0,room.w-W));
@@ -995,7 +1018,7 @@ function update(dt){
     if(transition.time>=(transition.exit.finish?2.6:.44)){transition=null;jumpQueued=attackQueued=false;}
     return;
   }
-  tick+=dt;exitLock-=dt;updatePlatforms(dt);updatePlayer(dt);updateEnemies(dt);updateRoomHearts(dt);
+  tick+=dt;exitLock-=dt;updatePlatforms(dt);updatePlayer(dt);updateFallHazards();updateEnemies(dt);updateRoomHearts(dt);
   if(attack){attack.time-=dt;if(attack.time<=0)attack=null;}
   for(const n of numbers){n.y-=dt*45;n.life-=dt;}numbers=numbers.filter(n=>n.life>0);
   // Cross the physical room boundary; approaching a passage is not enough.
@@ -1312,7 +1335,7 @@ function draw(){
   updateCamera();rect(0,0,W,H,'#0b1412');
   ctx.save();ctx.translate(Math.round((camera.offsetX-camera.x)/2)*2,Math.round((camera.offsetY-camera.y)/2)*2);
   ctx.beginPath();ctx.rect(0,0,room.w,room.h);ctx.clip();
-  drawBackground();drawMidground();drawPlatforms();drawWaterfalls();drawDebris();drawDoors();
+  drawBackground();drawMidground();drawPlatforms();drawWaterfalls();drawFallHazards();drawDebris();drawDoors();
   drawEnemies();drawRoomHearts();drawPlayer();drawAttack();
   for(const n of numbers){ctx.globalAlpha=Math.min(1,n.life*3);text(n.text,n.x,n.y,19,'#f1e4bb','center');}ctx.globalAlpha=1;
   if(room.type==='start'){text('A / D   MOVE',room.spawnX-25,room.floorY-70,10,'#9bae80');text(jumpHint(),room.route[0].x+20,room.route[0].y-19,10,'#a7bd85');}
