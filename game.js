@@ -430,8 +430,53 @@ function generateRoom(r,size){
   Math.random=()=>{seed=(Math.imul(seed,1664525)+1013904223)>>>0;return seed/4294967296;};
   try{configurePassages(r);buildTracks(r);}finally{Math.random=random;}
   separateRoomPlatforms(r);
+  r.traps=r.type==='normal'?(data.traps||[]).filter(t=>r.platforms.includes(data.platforms[t.supportIndex])).map(t=>({...t,support:data.platforms[t.supportIndex],lastCycle:-1})):[];
   configureFallHazards(r);
   if(r.bossId)createBoss(r);
+}
+function trapState(trap,time=tick){
+  const phase=((time+trap.offset)%4+4)%4,s=trap.support;
+  const x=s.x+s.w/2,y=s.y;
+  const warning=phase>=1.5&&phase<2.3,active=phase>=2.3&&phase<3.15;
+  if(trap.type==='crusher'){
+    const travel=phase<2.3?0:phase<2.65?(phase-2.3)/.35:phase<3.15?1:1-(phase-3.15)/.85;
+    return {x,y,phase,warning,active,body:{x:x-14,y:y-180+148*travel,w:28,h:32}};
+  }
+  return {x,y,phase,warning,active,body:{x:x-16,y:y-92,w:32,h:92}};
+}
+function updateTraps(){
+  for(const trap of room.traps||[]){
+    if(trap.support.gone>0)continue;
+    const state=trapState(trap),cycle=Math.floor((tick+trap.offset)/4);
+    if(trap.type==='dart'){
+      if(state.active&&trap.lastCycle!==cycle){
+        trap.lastCycle=cycle;
+        for(const dir of [-1,1])shots.push({x:state.x+dir*14-5,y:state.y-40,w:10,h:8,vx:dir*220,vy:0,hp:6,life:2,kind:'trapDart'});
+      }
+    }else if((trap.type==='crusher'||state.active)&&overlap(player,state.body))damage(state.body);
+  }
+}
+function drawTraps(){
+  for(const trap of room.traps||[]){
+    if(trap.support.gone>0)continue;
+    const s=trapState(trap),color=s.warning?'#ffd78a':s.active?'#ef9567':'#819695';
+    if(trap.type==='crusher'){
+      line(s.x,s.y-190,s.x,s.body.y,'#687779',4);
+      rect(s.body.x,s.body.y,s.body.w,s.body.h,'#59656d');rect(s.body.x+4,s.body.y+4,20,8,color);
+      for(let x=s.body.x;x<s.body.x+s.body.w;x+=8)polygon([[x,s.body.y+24],[x+4,s.body.y+32],[x+8,s.body.y+24]],'#d7dfcd');
+      if(s.warning)line(s.x-18,s.y-2,s.x+18,s.y-2,'#ffd78a',4);
+    }else{
+      rect(s.x-16,s.y-8,32,8,'#42525a');
+      if(trap.type==='dart'){
+        rect(s.x-12,s.y-40,24,32,'#59656d');rect(s.x-16,s.y-35,32,6,color);
+        if(s.warning){text('‹',s.x-24,s.y-25,18,color,'center');text('›',s.x+24,s.y-25,18,color,'center');}
+      }else{
+        for(let x=s.x-12;x<s.x+12;x+=8)rect(x,s.y-6,4,4,color);
+        if(s.active)for(let i=0;i<7;i++){const y=s.y-10-((tick*140+i*14)%82);rect(s.x-12+(i%3)*8,y,8,12,i%2?'#e0dfc5':'#9db9b5');}
+        else if(s.warning){rect(s.x-4,s.y-22,8,8,'#b4c6bb');text('!',s.x,s.y-32,12,color,'center');}
+      }
+    }
+  }
 }
 function configureFallHazards(r){
   r.hazards=[];if(!isL(r))return;
@@ -1103,7 +1148,7 @@ function update(dt){
     if(transition.time>=(transition.exit.finish?2.6:.44)){transition=null;jumpQueued=attackQueued=false;}
     return;
   }
-  tick+=dt;exitLock-=dt;updatePlatforms(dt);updatePlayer(dt);updateFallHazards();updateEnemies(dt);updateRoomHearts(dt);
+  tick+=dt;exitLock-=dt;updatePlatforms(dt);updatePlayer(dt);updateFallHazards();updateTraps();updateEnemies(dt);updateRoomHearts(dt);
   if(attack){attack.time-=dt;if(attack.time<=0)attack=null;}
   for(const n of numbers){n.y-=dt*45;n.life-=dt;}numbers=numbers.filter(n=>n.life>0);
   // Cross the physical room boundary; approaching a passage is not enough.
@@ -1420,7 +1465,7 @@ function draw(){
   updateCamera();rect(0,0,W,H,'#0b1412');
   ctx.save();ctx.translate(Math.round((camera.offsetX-camera.x)/2)*2,Math.round((camera.offsetY-camera.y)/2)*2);
   ctx.beginPath();ctx.rect(0,0,room.w,room.h);ctx.clip();
-  drawBackground();drawMidground();drawPlatforms();drawWaterfalls();drawFallHazards();drawDebris();drawDoors();
+  drawBackground();drawMidground();drawPlatforms();drawWaterfalls();drawFallHazards();drawTraps();drawDebris();drawDoors();
   drawEnemies();drawRoomHearts();drawPlayer();drawAttack();
   for(const n of numbers){ctx.globalAlpha=Math.min(1,n.life*3);text(n.text,n.x,n.y,19,'#f1e4bb','center');}ctx.globalAlpha=1;
   if(room.type==='start'){text('A / D   MOVE',room.spawnX-25,room.floorY-70,10,'#9bae80');text(jumpHint(),room.route[0].x+20,room.route[0].y-19,10,'#a7bd85');}
