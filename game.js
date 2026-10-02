@@ -117,12 +117,18 @@ function buildTracks(r){
     const index=r.route.indexOf(s),next=index>=0?r.route[index+1]:null;
     const target=next||r.platforms.filter(p=>p!==s&&!p.shapeBoundary&&p.baseY<s.baseY-20).sort((a,b)=>Math.hypot(a.baseX-s.baseX,a.baseY-s.baseY)-Math.hypot(b.baseX-s.baseX,b.baseY-s.baseY))[0];
     const dx=target?target.baseX+target.w/2-s.baseX-s.w/2:0,dy=target?s.baseY-target.baseY:100,dir=Math.sign(dx)||1;
-    const kinds=Math.abs(dx)>80&&dy>55?['diagonal','vertical','horizontal']:dy>80?['vertical','diagonal','horizontal']:['horizontal','diagonal','vertical'];
+    // Match the route's slope, then extend the rail toward its destination.
+    const kinds=Math.abs(dx)>Math.abs(dy)*1.8?['horizontal','diagonal','vertical']:Math.abs(dy)>Math.abs(dx)*1.8?['vertical','diagonal','horizontal']:['diagonal','vertical','horizontal'];
     let chosen=null;
     for(const kind of kinds){
-      for(const span of [96,64,48,32]){
+      for(const span of [256,224,192,160,128,96,64,48,32]){
+        if(span>Math.max(128,Math.abs(dx),Math.abs(dy)))continue;
+        for(const balance of [.25,.5,.75]){
         const vx=kind==='vertical'?0:dir,vy=kind==='horizontal'?0:-1;
-        const path=[{x:s.baseX-vx*span/2,y:s.baseY-vy*span/2},{x:s.baseX+vx*span/2,y:s.baseY+vy*span/2}];
+        const path=[{x:s.baseX-vx*span*balance,y:s.baseY-vy*span*balance},{x:s.baseX+vx*span*(1-balance),y:s.baseY+vy*span*(1-balance)}];
+        // The original foothold stays on the rail, preserving its jump access.
+        // Do not overshoot the landing this platform is meant to serve.
+        if(target&&Math.hypot(path[1].x+s.w/2-target.baseX-target.w/2,path[1].y-target.baseY)>Math.hypot(dx,dy)+16)continue;
         const steps=Math.ceil(Math.hypot(vx*span,vy*span)/8),clearance=r.bossId?68:44;
         let safe=true;
         for(let i=0;i<=steps;i++){
@@ -130,11 +136,13 @@ function buildTracks(r){
           if(p.x<40||p.x+s.w>r.w-40||p.y<80||p.y+s.h>=r.floorY||r.platforms.some(b=>b!==s&&b.type!=='oneway'&&b.type!=='moving'&&overlap({x:p.x,y:p.y-clearance,w:s.w,h:s.h+clearance},b))){safe=false;break;}
         }
         if(safe){chosen={path,kind};break;}
+        }
+        if(chosen)break;
       }
       if(chosen)break;
     }
     if(!chosen){s.type='oneway';s.x=s.baseX;s.y=s.baseY;s.travel=0;delete s.track;continue;}
-    s.trackNodes=chosen.path;s.trackKind=chosen.kind;s.track='purposeful';s.trackElapsed=0;
+    s.trackNodes=chosen.path;s.trackKind=chosen.kind;s.track='route-transfer';s.trackElapsed=0;
     s.trackLength=Math.hypot(chosen.path[1].x-chosen.path[0].x,chosen.path[1].y-chosen.path[0].y);
     s.x=chosen.path[0].x;s.y=chosen.path[0].y;
     s.travel=Math.abs(chosen.path[1].x-chosen.path[0].x)/2;s.rise=Math.abs(chosen.path[1].y-chosen.path[0].y);
@@ -1302,11 +1310,15 @@ function drawPlatforms(){
     if(original.trapCollider)continue;
     const s={...original,x:Math.round(original.x/4)*4,y:Math.round(original.y/4)*4};
     if(s.type==='moving'){
-      ctx.strokeStyle=t.edge;ctx.globalAlpha=.55;ctx.lineWidth=2;ctx.beginPath();
-      s.trackNodes.forEach((p,i)=>{if(i===0)ctx.moveTo(p.x+s.w/2,p.y+5);else ctx.lineTo(p.x+s.w/2,p.y+5);});
-      ctx.stroke();ctx.globalAlpha=1;
-      for(const p of s.trackNodes)rect(p.x+s.w/2-2,p.y+3,4,4,t.edge);
-      for(const u of [-1,1]){const p=trackPoint(s,u);rect(p.x+s.w/2-3,p.y+2,6,6,t.edge);}
+      const [a,b]=s.trackNodes,length=s.trackLength;
+      ctx.globalAlpha=.8;
+      for(let d=0;d<=length;d+=4){
+        const u=d/length,x=Math.round((a.x+(b.x-a.x)*u+s.w/2)/4)*4,y=Math.round((a.y+(b.y-a.y)*u+4)/4)*4;
+        rect(x,y,4,4,t.edge);
+        if(d%24===0)rect(x-4,y-4,12,12,t.shade);
+      }
+      ctx.globalAlpha=1;
+      for(const p of s.trackNodes){const x=Math.round((p.x+s.w/2)/4)*4,y=Math.round((p.y+4)/4)*4;rect(x-4,y-4,12,12,t.edge);rect(x,y,4,4,t.shade);}
     }
     if(s.gone>0){
       ctx.save();ctx.globalAlpha=.65;
