@@ -93,6 +93,7 @@ const key=(x,y)=>`${x},${y}`;
 const clamp=(n,a,b)=>Math.max(a,Math.min(b,n));
 function platform(x,y,w,type='solid',h=20){return {x,y,w,h,type,baseX:x,baseY:y,life:0,gone:0,dx:0,dy:0};}
 const TRACK_TILE=32;
+const BREAK_DELAY=.45;
 function configureTrack(s){s.travel=64;s.rise=64;s.track='tiled';}
 function trackPoint(s,u){
   if(!s.trackNodes)return {x:s.baseX+(s.travel||0)*u,y:s.baseY};
@@ -699,7 +700,7 @@ function updatePlatforms(dt){
       if(s.gone>0){s.gone-=dt;if(s.gone<=0&&overlap(player,s))s.gone=.1;continue;}
       if(player.ground===s){s.life+=dt;s.crumbleClock=(s.crumbleClock||0)+dt;if(s.crumbleClock>=.12){crumbleParticles(s,2);s.crumbleClock=0;}}
       else{s.life=Math.max(0,s.life-dt);s.crumbleClock=0;}
-      if(s.life>=.75){crumbleParticles(s,18);s.life=0;s.gone=3;if(player.ground===s)player.ground=null;}
+      if(s.life>=BREAK_DELAY){crumbleParticles(s,18);s.life=0;s.gone=3;if(player.ground===s)player.ground=null;}
     }
   }
 }
@@ -1130,7 +1131,13 @@ function drawPlatforms(){
       for(const p of s.trackNodes)rect(p.x+s.w/2-2,p.y+3,4,4,t.edge);
       for(const u of [-1,1]){const p=trackPoint(s,u);rect(p.x+s.w/2-3,p.y+2,6,6,t.edge);}
     }
-    if(s.gone>0){ctx.globalAlpha=.18;line(s.x,s.y,s.x+s.w,s.y,'#b1bc75',2);ctx.globalAlpha=1;continue;}
+    if(s.gone>0){
+      ctx.save();ctx.globalAlpha=.65;
+      const right=s.x+Math.floor((s.w-4)/4)*4,bottom=s.y+Math.max(4,Math.floor((s.h-4)/4)*4);
+      for(let x=s.x;x<=right;x+=12){rect(x,s.y,4,4,t.edge);rect(x,bottom,4,4,t.edge);}
+      for(let y=s.y;y<=bottom;y+=12){rect(s.x,y,4,4,t.edge);rect(right,y,4,4,t.edge);}
+      ctx.restore();continue;
+    }
     if(s.type==='oneway'||s.type==='moving'){
       rect(s.x,s.y,s.w,4,t.edge);
       polygon([[s.x,s.y+4],[s.x+s.w,s.y+4],[s.x+s.w-8,s.y+10],[s.x+s.w*.65,s.y+8],[s.x+s.w*.4,s.y+12],[s.x+5,s.y+9]],s.type==='moving'?'#937456':t.rock);
@@ -1151,10 +1158,10 @@ function drawPlatforms(){
       ctx.save();ctx.beginPath();ctx.rect(s.x,s.y,s.w,s.h);ctx.clip();
       for(const [a,b,c,d]of platformCracks(original)){
         line(s.x+a+2,s.y+b,s.x+c+2,s.y+d,edge,4);
-        line(s.x+a,s.y+b,s.x+c,s.y+d,ink,s.life>.4?4:2);
+        line(s.x+a,s.y+b,s.x+c,s.y+d,ink,s.life>BREAK_DELAY*.55?4:2);
       }
       ctx.restore();
-      if(s.life>0)rect(s.x,s.y-5,s.w*(1-s.life/.75),3,'#ffd78a');
+      if(s.life>0)rect(s.x,s.y-5,s.w*(1-s.life/BREAK_DELAY),3,'#ffd78a');
     }
   }
 }
