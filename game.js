@@ -715,8 +715,8 @@ function updatePlatforms(dt){
     if(s.type==='break'){
       if(s.gone>0){s.gone-=dt;if(s.gone<=0&&overlap(player,s))s.gone=.1;continue;}
       if(player.ground===s){s.life+=dt;s.crumbleClock=(s.crumbleClock||0)+dt;if(s.crumbleClock>=.12){crumbleParticles(s,2);s.crumbleClock=0;}}
-      else{s.life=Math.max(0,s.life-dt);s.crumbleClock=0;}
-      if(s.life>=BREAK_DELAY){crumbleParticles(s,18);s.life=0;s.gone=3;if(player.ground===s)player.ground=null;}
+      else{s.life=Math.max(0,s.life-dt*.35);s.crumbleClock=0;}
+      if(s.life>=BREAK_DELAY){crumbleParticles(s,18);s.life=0;s.gone=5;if(player.ground===s)player.ground=null;}
     }
   }
 }
