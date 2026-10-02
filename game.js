@@ -94,6 +94,7 @@ const clamp=(n,a,b)=>Math.max(a,Math.min(b,n));
 function platform(x,y,w,type='solid',h=20){return {x,y,w,h,type,baseX:x,baseY:y,life:0,gone:0,dx:0,dy:0};}
 const TRACK_TILE=32;
 const BREAK_DELAY=.45;
+const PLAYER_PHYSICS={speed:245,jump:568,gravity:1120};
 function configureTrack(s){s.travel=64;s.rise=64;s.track='tiled';}
 function trackPoint(s,u){
   if(!s.trackNodes)return {x:s.baseX+(s.travel||0)*u,y:s.baseY};
@@ -633,12 +634,12 @@ function updatePlayer(dt){
   }
   if(jumpQueued){
     if(down&&jumpQueued!=='KeyW'&&p.ground&&(p.ground.type==='oneway'||p.ground.type==='moving')){p.drop=.24;p.y+=5;p.vy=70;p.ground=null;p.coyote=0;}
-    else if(p.ground||p.coyote>0){p.vy=-570;p.ground=null;p.coyote=0;}
+    else if(p.ground||p.coyote>0){p.vy=-PLAYER_PHYSICS.jump;p.ground=null;p.coyote=0;}
     else if(p.wall){p.vy=-530;p.vx=-p.wall*330;p.hitLock=.19;p.ledgeCD=.2;}
     jumpQueued=false;
   }
-  if(p.hitLock<=0){const target=direction*(p.crouch?115:270);p.vx+=(target-p.vx)*Math.min(1,dt*(p.ground?20:9));}
-  p.vy=Math.min(740,p.vy+1120*dt);
+  if(p.hitLock<=0){const target=direction*(p.crouch?115:PLAYER_PHYSICS.speed);p.vx+=(target-p.vx)*Math.min(1,dt*(p.ground?20:9));}
+  p.vy=Math.min(740,p.vy+PLAYER_PHYSICS.gravity*dt);
   if(p.wall&&p.vy>0){p.vy=Math.min(p.vy,down?0:direction===p.wall?48:110);}
   if(p.dashTime>0){p.vx=p.dashFace*700;p.vy=0;}
   applyRiverCurrent(p,dt);
