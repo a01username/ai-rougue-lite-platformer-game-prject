@@ -257,7 +257,7 @@ function tryBuildFloor(){
   // A compact first climb, then one extra route section every three floors.
   const routeSections=2+Math.floor((floor-1)/3);
   for(let level=0;level<routeSections;level++){
-    if(current.size!=='large'&&!isL(current)&&Math.random()<.6){
+    if(current!==start&&current.size!=='large'&&!isL(current)&&Math.random()<.6){
       const direction=pick(['left','right']),distance=pick([1,2]);
       for(let step=0;step<distance;step++){
         const previous=current,connector=attach(current,direction,step===distance-1?'small':pick(['long','small']));
@@ -273,7 +273,7 @@ function tryBuildFloor(){
     current=attach(current,'up',pick(['small','large',...L_SHAPES]))||attach(current,'up','small')||current;
   }
   // Each special room ends its own 5–7-room branch with varied footprints.
-  const main=[...rooms.values()].filter(r=>(r.type==='normal'||r.type==='start'));
+  const main=[...rooms.values()].filter(r=>r.type==='normal');
   for(const type of ['item','shop']){
     let placed=false;
     for(const source of shuffle(main)){

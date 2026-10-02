@@ -187,3 +187,5 @@ Map outline fix: room fills and borders share one polygon with consistent grid i
 Slower breakable-platform regeneration: off-platform timer recovery now runs at 35% of its previous speed, and collapsed platforms return after five seconds instead of three. Breaking still takes 0.45 seconds; dotted outlines remain visible until respawn. Timing checks passed.
 
 L-room arm obstacles: selected intermediate crossing footholds become narrow solid buttresses extending down to the river shelf, with climbable sides and preserved landing heights. Ceiling outcrops break up the upper passage while reserving exit and nearby-platform clearance. Applies to mirrored, standard, long, and tall L rooms. Checked 151 generated L rooms containing 182 arm buttresses and 181 ceiling obstacles.
+
+Starting-room exit: each floor begins in a small room with a single upward connection. The first main-route step cannot go sideways, and special-room branches no longer originate from the start room. Verified across 80 generated floors.
