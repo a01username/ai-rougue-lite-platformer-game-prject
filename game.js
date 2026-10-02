@@ -866,7 +866,8 @@ function updateBoss(b,dt){
   if(b.id==='warden'){
     const riding=b.support&&b.support.gone<=0&&b.phase!=='jump';
     if(riding){
-      b.x+=b.support.dx||0;b.y=b.support.y-b.h;
+      if(b.ridingPlatform!==b.support){b.ridingPlatform=b.support;b.ridingOffset=b.x-(b.support.x-(b.support.dx||0));}
+      b.x=b.support.x+b.ridingOffset;b.y=b.support.y-b.h;
       if(b.phase==='approach')b.launchX+=b.support.dx||0;
     }
     if(b.targetSupport&&b.targetSupport.gone<=0){
@@ -903,7 +904,7 @@ function updateBoss(b,dt){
       for(const s of room.platforms){
         if(s.gone>0)continue;
         if(b.x+b.w>s.x&&b.x<s.x+s.w&&b.vy>=0&&oldY+b.h<=s.y+2&&b.y+b.h>=s.y){
-          b.y=s.y-b.h;b.support=s;b.vx=b.vy=0;b.phase='recover';b.clock=0;
+          b.y=s.y-b.h;b.support=s;b.ridingPlatform=s;b.ridingOffset=b.x-s.x;b.vx=b.vy=0;b.phase='recover';b.clock=0;
           bossShot(b.x-24,s.y-14,-280,0,'wave');bossShot(b.x+b.w+2,s.y-14,280,0,'wave');if(b.tier){b.rockTargets=[-100,0,100].map(offset=>({x:clamp(player.x+13+offset,40,room.w-40),y:Math.max(45,player.y-200)}));b.phase='rockfall';b.clock=0;b.guard=true;}break;
         }
         if(s.type==='solid'||s.type==='break'){
@@ -989,6 +990,7 @@ function updateEnemies(dt){
   for(const e of room.enemies){
     if(e.hp<=0)continue;e.clock+=dt;e.flightTime=(e.flightTime||0)+dt;e.recoil=Math.max(0,(e.recoil||0)-dt);e.flash=Math.max(0,e.flash-dt);
     const oldX=e.x,oldY=e.y;
+    if(e.boss&&e.id==='warden'&&e.phase==='jump')e.ridingPlatform=null;
     if(e.boss)updateBoss(e,dt);
     else if(e.type==='crawler')updateCrawler(e,dt);
     else if(e.type==='air'){e.x=e.homeX+Math.sin(e.flightTime*.8)*38;e.y=e.homeY+Math.sin(e.flightTime*2)*15;}
@@ -1005,6 +1007,14 @@ function updateEnemies(dt){
       else if(e.phase==='return'){const t=clamp(e.clock/.9,0,1),ease=t*t*(3-2*t),idleY=e.homeY+Math.sin(e.flightTime*2)*5;e.x=e.returnX+(e.homeX-e.returnX)*ease;e.y=e.returnY+(idleY-e.returnY)*ease;if(t===1){e.phase='idle';e.clock=0;}}
     }
     resolveEnemyTerrain(e,oldX,oldY);
+    if(e.boss&&e.id==='warden'&&e.phase!=='jump'&&e.support&&e.support.gone<=0){
+      const s=e.support;
+      const x=s.w>=e.w?clamp(e.x,s.x,s.x+s.w-e.w):s.x+(s.w-e.w)/2;
+      const attached={x,y:s.y-e.h,w:e.w,h:e.h};
+      const blocked=room.platforms.some(o=>o!==s&&o.gone<=0&&o.type!=='oneway'&&o.type!=='moving'&&overlap(attached,o));
+      if(!blocked){e.x=x;e.y=attached.y;e.ridingPlatform=s;e.ridingOffset=x-s.x;}
+      else{e.phase='jump';e.clock=0;e.vx=e.vy=0;e.targetSupport=s;e.targetX=e.x;e.targetY=s.y-e.h;e.support=null;e.ridingPlatform=null;}
+    }
     if((e.type==='ground'||e.type==='air')&&e.clock>2.2){
       const dx=p.x+p.w/2-e.x-e.w/2,dy=p.y+p.h/2-e.y-e.h/2,distance=Math.hypot(dx,dy);
       if(distance<=e.range){
