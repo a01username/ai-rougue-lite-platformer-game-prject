@@ -383,6 +383,28 @@ function configurePassages(r){
   if(r.type==='finish')connectLanding(r,{x:r.topX-89,y:140,w:220});
   r.spawnX=clamp(r.bottomX+(r.bottomX<r.w/2?160:-160),65,r.w-91);
 }
+function separateRoomPlatforms(r){
+  const required=new Set([r.platforms[0],...r.route,r.floorStep]);
+  const kept=[];
+  const ordered=[...r.platforms].sort((a,b)=>Number(required.has(b)||b.shapeBoundary||b.verticalWall)-Number(required.has(a)||a.shapeBoundary||a.verticalWall));
+  for(const s of ordered){
+    const intentional=b=>s.shapeBoundary||b.shapeBoundary||s.verticalWall||b.verticalWall;
+    const conflicts=()=>kept.filter(b=>!intentional(b)&&overlap({x:s.x-10,y:s.y-8,w:s.w+20,h:s.h+16},b));
+    let hits=conflicts();
+    if(hits.length&&!required.has(s)){
+      // Keep the usable portion of an approach ledge; discard redundant slivers.
+      for(const b of hits){
+        const left=b.x-12-s.x,right=s.x+s.w-b.x-b.w-12;
+        if(left>=right&&left>=48)s.w=Math.min(s.w,left);
+        else if(right>=48){const shift=b.x+b.w+12-s.x;s.x+=shift;s.baseX+=shift;s.w-=shift;if(s.trackNodes)for(const n of s.trackNodes)n.x+=shift;}
+      }
+      if(conflicts().length)continue;
+    }
+    kept.push(s);
+  }
+  r.platforms=kept;
+  r.enemies=r.enemies.filter(e=>!e.support||kept.includes(e.support));
+}
 function generateRoom(r,size){
   r.size=size;r.links??={};Object.assign(r,ROOM_SIZES[size]);r.floorY=r.h-40;
   const bank=ROOM_LAYOUTS[r.bossId||size];
@@ -399,6 +421,7 @@ function generateRoom(r,size){
   const random=Math.random;let seed=7919+r.layout*97;
   Math.random=()=>{seed=(Math.imul(seed,1664525)+1013904223)>>>0;return seed/4294967296;};
   try{configurePassages(r);buildTracks(r);}finally{Math.random=random;}
+  separateRoomPlatforms(r);
   configureFallHazards(r);
   if(r.bossId)createBoss(r);
 }
@@ -919,10 +942,32 @@ function updateCrawler(e,dt){
   else if((d-=down)<across){e.x=s.x+s.w-d;e.y=s.y+s.h;e.crawlAngle=Math.PI;}
   else{d-=across;e.x=s.x-e.w;e.y=s.y+s.h-d;e.crawlAngle=-Math.PI/2;}
 }
+function resolveEnemyTerrain(e,oldX,oldY){
+  const solids=room.platforms.filter(s=>s.gone<=0&&s.type!=='oneway'&&s.type!=='moving');
+  const targetX=e.x,targetY=e.y;e.x=oldX;e.y=oldY;
+  // Small swept steps also catch fast dives and scripted boss movement.
+  const steps=Math.max(1,Math.ceil(Math.max(Math.abs(targetX-oldX),Math.abs(targetY-oldY))/4));
+  let hitX=false,hitY=false;
+  for(let i=0;i<steps;i++){
+    if(!hitX){const before=e.x;e.x+=(targetX-oldX)/steps;if(solids.some(s=>overlap(e,s))){e.x=before;hitX=true;}}
+    if(!hitY){const before=e.y;e.y+=(targetY-oldY)/steps;if(solids.some(s=>overlap(e,s))){e.y=before;hitY=true;}}
+  }
+  // A returning breakable or a changed support can surround a stationary enemy.
+  for(const s of solids)if(overlap(e,s)){
+    const choices=[{x:s.x-e.w,y:e.y},{x:s.x+s.w,y:e.y},{x:e.x,y:s.y-e.h},{x:e.x,y:s.y+s.h}].sort((a,b)=>Math.hypot(a.x-e.x,a.y-e.y)-Math.hypot(b.x-e.x,b.y-e.y));
+    const free=choices.find(p=>!solids.some(o=>overlap({...e,...p},o)));if(free){e.x=free.x;e.y=free.y;}
+  }
+  if(hitX)e.vx=0;if(hitY)e.vy=0;
+  if((hitX||hitY)&&e.phase==='dive'){
+    e.phase=e.boss?'recover':'return';e.clock=0;e.returnX=e.x;e.returnY=e.y;
+  }
+  if((hitX||hitY)&&e.type==='crawler'){e.vx=e.vx||65;e.vx*=-1;}
+}
 function updateEnemies(dt){
   const p=player;
   for(const e of room.enemies){
     if(e.hp<=0)continue;e.clock+=dt;e.flightTime=(e.flightTime||0)+dt;e.recoil=Math.max(0,(e.recoil||0)-dt);e.flash=Math.max(0,e.flash-dt);
+    const oldX=e.x,oldY=e.y;
     if(e.boss)updateBoss(e,dt);
     else if(e.type==='crawler')updateCrawler(e,dt);
     else if(e.type==='air'){e.x=e.homeX+Math.sin(e.flightTime*.8)*38;e.y=e.homeY+Math.sin(e.flightTime*2)*15;}
@@ -938,6 +983,7 @@ function updateEnemies(dt){
       else if(e.phase==='dive'){e.x=clamp(e.x+e.vx*dt,26,room.w-e.w-26);e.y+=e.vy*dt;if(e.clock>.72||e.y>room.floorY-e.h-5){e.phase='return';e.clock=0;e.returnX=e.x;e.returnY=e.y;}}
       else if(e.phase==='return'){const t=clamp(e.clock/.9,0,1),ease=t*t*(3-2*t),idleY=e.homeY+Math.sin(e.flightTime*2)*5;e.x=e.returnX+(e.homeX-e.returnX)*ease;e.y=e.returnY+(idleY-e.returnY)*ease;if(t===1){e.phase='idle';e.clock=0;}}
     }
+    resolveEnemyTerrain(e,oldX,oldY);
     if((e.type==='ground'||e.type==='air')&&e.clock>2.2){
       const dx=p.x+p.w/2-e.x-e.w/2,dy=p.y+p.h/2-e.y-e.h/2,distance=Math.hypot(dx,dy);
       if(distance<=e.range){
