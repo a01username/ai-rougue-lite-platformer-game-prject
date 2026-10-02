@@ -280,12 +280,14 @@ function connectLanding(r,target){
   const anchors=r.route.filter(s=>s.type!=='moving');
   const source=anchors.reduce((best,s)=>Math.abs(s.y-target.y)<Math.abs(best.y-target.y)?s:best,anchors[0]);
   const sx=source.x+source.w/2,tx=target.x+target.w/2;
-  const steps=Math.max(1,Math.ceil(Math.abs(tx-sx)/150),Math.ceil(Math.abs(target.y-source.y)/85));
+  const steps=Math.max(1,Math.ceil(Math.abs(tx-sx)/(isL(r)?180:150)),Math.ceil(Math.abs(target.y-source.y)/(isL(r)?105:85)));
   let previous=source;
   for(let i=1;i<=steps;i++){
-    const t=i/steps,last=i===steps,w=last?(target.w===150?150:90):80;
+    const t=i/steps,last=i===steps,w=last?(target.w===150?150:90):(isL(r)?64:80);
     const y=source.y+(target.y-source.y)*t+Math.sin(t*Math.PI)*28;
-    const s=platform(sx+(tx-sx)*t-w/2,y,w,last||i%2===0?'solid':'break',24);
+    const type=last?'solid':isL(r)?(i%3===0?'moving':'break'):i%2===0?'solid':'break';
+    const s=platform(sx+(tx-sx)*t-w/2,y,w,type,24);
+    if(type==='moving')configureTrack(s);
     s.access=true;s.accessFrom=previous;r.platforms.push(s);previous=s;
   }
 }
@@ -340,7 +342,7 @@ function generateRoom(r,size){
   r.platforms=[platform(0,r.floorY,r.w,'solid',40)];r.route=[];r.enemies=[];r.hearts=[];r.debris=[];r.clearRewarded=false;
   // The main route includes moving and collapsing steps. Collapsed steps
   // return, and the final landing stays fixed so every exit remains usable.
-  const rows=Math.max(3,Math.floor((r.floorY-140)/112)), rise=(r.floorY-140)/rows;
+  const rows=Math.max(3,Math.floor((r.floorY-140)/(isL(r)?126:112))), rise=(r.floorY-140)/rows;
   let center=isL(r)?(mirroredL(r)?r.w-350:350):rand(190,r.w-190), drift=pick([-1,1]);
   for(let i=0;i<rows;i++){
     const previous=r.route.at(-1);
@@ -351,8 +353,8 @@ function generateRoom(r,size){
       center=clamp(center,195,r.w-195);
     }
     if(isL(r)&&r.floorY-rise*(i+1)>420)center=mirroredL(r)?clamp(center,r.w-550,r.w-190):clamp(center,190,550);
-    const width=rand(180,190), y=r.floorY-rise*(i+1);
-    const type=i===rows-1?'oneway':i%3===0?'break':i%3===1?'moving':'oneway';
+    const width=isL(r)?rand(104,128):rand(180,190), y=r.floorY-rise*(i+1);
+    const type=i===rows-1?'oneway':isL(r)?(i%2===0?'break':'moving'):i%3===0?'break':i%3===1?'moving':'oneway';
     const s=platform(center-width/2,y,width,type,type==='break'?20:10);
     if(type==='moving')configureTrack(s);
     r.route.push(s);r.platforms.push(s);
@@ -370,6 +372,7 @@ function generateRoom(r,size){
   // Add branches outward from reachable steps, with clear space around them.
   const types=shuffle(['solid','break','moving']);
   for(const anchor of shuffle(r.route)){
+    if(isL(r)&&Math.random()<.7)continue;
     const side=pick([-1,1]), width=rand(115,160), travel=types[0]==='moving'?60:0;
     const x=side<0?anchor.x-width-45-travel:anchor.x+anchor.w+45+travel;
     const candidate=platform(x,anchor.y,width,types[0],types[0]==='moving'?10:20);
