@@ -332,10 +332,10 @@ function connectLanding(r,target){
   const anchors=r.route.filter(s=>s.type!=='moving');
   const source=anchors.reduce((best,s)=>Math.abs(s.y-target.y)<Math.abs(best.y-target.y)?s:best,anchors[0]);
   const sx=source.x+source.w/2,tx=target.x+target.w/2;
-  const steps=Math.max(1,Math.ceil(Math.abs(tx-sx)/(isL(r)?180:150)),Math.ceil(Math.abs(target.y-source.y)/(isL(r)?105:85)));
+  const steps=Math.max(1,Math.ceil(Math.abs(tx-sx)/(r.bossId?150:180)),Math.ceil(Math.abs(target.y-source.y)/(isL(r)?105:85)));
   let previous=source;
   for(let i=1;i<=steps;i++){
-    const t=i/steps,last=i===steps,w=last?(target.w===150?150:90):(isL(r)?64:80);
+    const t=i/steps,last=i===steps,w=last?(target.w===150?150:90):(r.bossId?80:64);
     const y=source.y+(target.y-source.y)*t+Math.sin(t*Math.PI)*28;
     const type=last?'solid':isL(r)?(i%3===0?'moving':'break'):i%2===0?'solid':'break';
     const s=platform(sx+(tx-sx)*t-w/2,y,w,type,24);
