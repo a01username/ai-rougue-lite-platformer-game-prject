@@ -234,6 +234,7 @@ function tryBuildFloor(){
     rooms.delete(key(r.x,r.y));
   }
   function attach(parent,direction,size,type='normal',branch=false){
+    if(parent.type==='start'&&(branch||direction!=='up'||Object.keys(parent.links).length))return null;
     if(parent.links[direction])return null;
     const shape=ROOM_SIZES[size];let x=parent.x,y=parent.y;
     if(direction==='right'){x+=parent.gridW;y+=Math.max(0,parent.gridH-shape.gridH);}
@@ -272,12 +273,17 @@ function tryBuildFloor(){
     if(Math.random()<.55){const shaft=attach(current,'up','tall');if(shaft)current=shaft;}
     current=attach(current,'up',pick(['small','large',...L_SHAPES]))||attach(current,'up','small')||current;
   }
+  // Keep an ordinary junction before the summit so side branches can fit
+  // even when the preceding main route consists entirely of vertical rooms.
+  if(isL(current)||current.size==='tall')current=attach(current,'up','small')||current;
   // Each special room ends its own 5–7-room branch with varied footprints.
-  const main=[...rooms.values()].filter(r=>r.type==='normal');
+  const main=[...rooms.values()].filter(r=>r.type==='normal'&&!r.branch);
+  const branchOrigins=new Set();
   for(const type of ['item','shop']){
     let placed=false;
-    for(const source of shuffle(main)){
+    for(const source of shuffle(main).sort((a,b)=>Number(branchOrigins.has(a))-Number(branchOrigins.has(b)))){
       for(const direction of shuffle(source.size==='long'?['left','right']:source.size==='tall'||isL(source)?['up']:['left','right','up'])){
+        if(source===current&&direction==='up')continue;
         for(let attempt=0;attempt<12&&!placed;attempt++){
         const path=[];let tip=source,horizontalRun=0,upSteps=0;const length=pick([5,6,7]);
         function extend(type,index){
@@ -293,7 +299,7 @@ function tryBuildFloor(){
         }
         for(let i=0;i<length;i++){const n=extend('normal',i);if(!n)break;path.push(n);tip=n;}
         const special=path.length===length?extend(type,length):null;
-        if(special&&upSteps>=2){placed=true;break;}
+        if(special&&upSteps>=2){branchOrigins.add(source);placed=true;break;}
         if(special)remove(special);
         for(const r of path.reverse())remove(r);
         }
@@ -312,6 +318,11 @@ function tryBuildFloor(){
   const spec=bossForFloor(floor),finish=attach(current,'up',spec.size,'finish');
   if(!finish)return null;
   finish.bossId=spec.id;finish.bossSpec=spec;finish.layout=Math.floor(rand(0,3));
+  if(Object.keys(start.links).length!==1||!start.links.up)return null;
+  for(const special of [...rooms.values()].filter(r=>r.type==='item'||r.type==='shop')){
+    let branch=special;while(branch.parent?.branch)branch=branch.parent;
+    if(!branch.parent||branch.parent.type!=='normal'||branch.parent.branch)return null;
+  }
   for(const r of rooms.values())generateRoom(r,r.size);
   return start;
 }
