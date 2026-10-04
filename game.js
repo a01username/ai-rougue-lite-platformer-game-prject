@@ -450,13 +450,28 @@ function generateRoom(r,size){
   configureFallHazards(r);
   if(r.bossId)createBoss(r);
 }
+// Trigger once under the head, then complete warning, slam, and return.
+function updateCrusher(trap,dt){
+  if(trap.support.gone>0){trap.crusherClock=-1;trap.crusherCooldown=0;return;}
+  if((trap.crusherClock??-1)>=0){
+    trap.crusherClock+=dt;
+    if(trap.crusherClock>=2.25){trap.crusherClock=-1;trap.crusherCooldown=.65;}
+    return;
+  }
+  trap.crusherCooldown=Math.max(0,(trap.crusherCooldown||0)-dt);
+  const s=trap.support,x=s.x+s.w/2;
+  const lane={x:x-14,y:s.y-148,w:28,h:148};
+  const blocked=room.platforms.some(p=>p!==s&&p!==trap.collider&&p.gone<=0&&p.type!=='moving'&&p.type!=='oneway'&&overlap({x:x-12,y:s.y-148,w:24,h:Math.max(0,player.y-(s.y-148))},p));
+  if(!devFlight&&trap.crusherCooldown===0&&overlap(player,lane)&&!blocked)trap.crusherClock=0;
+}
 function trapState(trap,time=tick){
   const phase=((time+trap.offset)%4+4)%4,s=trap.support;
   const x=s.x+s.w/2,y=s.y;
   const warning=phase>=1.5&&phase<2.3,active=phase>=2.3&&phase<3.15;
   if(trap.type==='crusher'){
-    const travel=phase<2.3?0:phase<2.65?(phase-2.3)/.35:phase<3.15?1:1-(phase-3.15)/.85;
-    return {x,y,phase,warning,active,body:{x:x-14,y:y-180+148*travel,w:28,h:32}};
+    const clock=trap.crusherClock??-1;
+    const travel=clock<.55?0:clock<.9?(clock-.55)/.35:clock<1.4?1:clamp(1-(clock-1.4)/.85,0,1);
+    return {x,y,phase:clock,warning:clock>=0&&clock<.55,active:clock>=.55&&clock<1.4,body:{x:x-14,y:y-180+148*travel,w:28,h:32}};
   }
   return {x,y,phase,warning,active,body:{x:x-16,y:y-(trap.height||144),w:32,h:trap.height||144}};
 }
@@ -819,7 +834,9 @@ function updatePlatforms(dt){
   room.debris=room.debris.filter(p=>p.life>0);
   for(const s of room.platforms){s.dx=s.dy=0;
     if(s.trapCollider){
-      const trap=s.trapCollider,next=trapState(trap).body,oldY=s.y;
+      const trap=s.trapCollider;
+      updateCrusher(trap,dt);
+      const next=trapState(trap).body,oldY=s.y;
       s.gone=trap.support.gone>0?1:0;s.dx=next.x-s.x;s.dy=next.y-s.y;s.x=next.x;s.y=next.y;
       if(s.gone<=0&&!devFlight&&player.ground!==s&&overlap(player,s)){
         if(s.dy>0&&player.y>=oldY+s.h-8)damage(s);
