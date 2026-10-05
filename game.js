@@ -564,21 +564,32 @@ function drawTraps(){
       for(const dx of [-8,4]){rect(x+dx,top+24,4,8,'#d7dfbd');}
       if(warning){pixel(-12,-4,24,4,'#d9bd83');}
     }else if(trap.type==='dart'){
-      // Faceless seed pod rises from a soil slit, then sinks after firing.
+      // A flowering thistle: leafy silhouette, curved stem, and petal crown.
       const rise=Math.round(44*state.emerge/4)*4,offset=44-rise;
-      pixel(-16,-4,32,4,theme.shade);
-      ctx.save();ctx.beginPath();ctx.rect(x-24,y-48,48,48);ctx.clip();
-      pixel(-4,-24+offset,8,24,'#596f4c');
-      pixel(-12,-36+offset,24,20,asleep?'#57655a':'#788657');
-      pixel(-8,-44+offset,16,8,moss);
-      pixel(-4,-40+offset,4,20,'#a0a777');
-      for(const dir of [-1,1]){
-        pixel(dir<0?-16:12,-40+offset,4,8,'#263e35');
-        pixel(dir<0?-20:16,-40+offset,4,4,'#d9d7a0');
-      }
+      const leaf=asleep?'#566b47':'#79a44f',light=asleep?'#788258':'#afd16c';
+      pixel(-12,-4,24,4,theme.shade);
+      ctx.save();ctx.beginPath();ctx.rect(x-28,y-48,56,48);ctx.clip();
+      const plant=(dx,dy,w,h,c)=>pixel(dx,dy+offset,w,h,c);
+      plant(-4,-24,4,24,'#456637');plant(0,-32,4,16,leaf);
+      // Two pointed, serrated leaves join the stem at different heights.
+      plant(-12,-20,12,8,leaf);plant(-20,-24,12,8,leaf);plant(-24,-28,8,4,light);
+      plant(-16,-24,4,4,light);plant(-12,-20,8,4,light);
+      plant(4,-12,12,8,leaf);plant(12,-20,12,12,leaf);plant(20,-24,4,8,light);
+      plant(8,-12,8,4,light);plant(16,-20,4,8,light);
+      // Splayed purple petals surround one central seed spike (no face).
+      const petal=warning?'#d999ad':'#ad719a';
+      plant(-8,-36,16,12,'#587b3e');
+      plant(-16,-40,8,8,petal);plant(8,-40,8,8,petal);
+      plant(-12,-44,8,8,'#d0a0bc');plant(4,-44,8,8,'#d0a0bc');
+      plant(-4,-44,8,12,'#d7ba6e');plant(-4,-48,4,4,'#f0d790');
+      plant(-8,-32,16,4,leaf);
+      // Pale thorn tips point in the two firing directions.
+      plant(-20,-40,4,4,'#e4d8ae');plant(16,-40,4,4,'#e4d8ae');
       ctx.restore();
-      pixel(-20,-4,8,4,moss);pixel(12,-4,8,4,moss);
-      if(asleep){const buds=Math.floor((1-trap.disabled/6)*4);for(let i=0;i<4;i++)pixel(-12+i*8,-4,4,4,i<buds?'#b8c88a':'#435448');}
+      // Basal leaves remain above the soil while the flower retracts.
+      pixel(-16,-4,12,4,leaf);pixel(-20,-8,8,4,light);
+      pixel(4,-4,12,4,leaf);pixel(12,-8,8,4,light);
+      if(asleep){const buds=Math.floor((1-trap.disabled/6)*4);for(let i=0;i<buds;i++)pixel(-8+i*4,-4,4,4,'#bd95ae');}
     }else{
       // Mineral spring: a dark water basin inside uneven mossy stones.
       pixel(-16,-8,32,8,theme.shade);pixel(-12,-12,8,8,theme.rock);pixel(8,-8,12,8,theme.rock);
