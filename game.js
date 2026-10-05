@@ -573,7 +573,16 @@ function drawTraps(){
       const leaf=asleep?'#566b47':'#79a44f',light=asleep?'#788258':'#afd16c';
       pixel(-12,-4,24,4,theme.shade);
       ctx.save();ctx.beginPath();ctx.rect(x-28,y-48,56,48);ctx.clip();
-      const plant=(dx,dy,w,h,c)=>pixel(dx,dy+offset,w,h,c);
+      const wind=clamp((state.phase-1.5)/.8,0,1),release=clamp((state.phase-2.3)/.85,0,1);
+      const angle=asleep?0:state.warning?-Math.PI/2*wind*wind:state.active?-Math.PI/2+Math.PI*2.5*(1-Math.pow(1-release,3)):0;
+      // Turn around the rooted stem, projecting each art pixel onto the grid.
+      const plant=(dx,dy,w,h,c)=>{
+        for(let px=dx;px<dx+w;px+=4)for(let py=dy;py<dy+h;py+=4){
+          const depth=py<-28?4:py<-12?-4:0;
+          const rx=Math.round(((px+2)*Math.cos(angle)+depth*Math.sin(angle)-2)/4)*4;
+          pixel(rx,py+offset,4,4,c);
+        }
+      };
       plant(-4,-24,4,24,'#456637');plant(0,-32,4,16,leaf);
       // Two pointed, serrated leaves join the stem at different heights.
       plant(-12,-20,12,8,leaf);plant(-20,-24,12,8,leaf);plant(-24,-28,8,4,light);
@@ -1544,7 +1553,7 @@ function drawSpinningProjectile(s){
   ctx.save();
   ctx.translate(Math.round((s.x+s.w/2)/4)*4,Math.round((s.y+s.h/2)/4)*4);
   // Quarter-turn frames keep every art pixel aligned to the shared pixel grid.
-  ctx.rotate(turn*Math.PI/2*direction);
+  ctx.rotate(s.kind==='trapDart'?(s.vx<0?-Math.PI/2:Math.PI/2):turn*Math.PI/2*direction);
   if(s.kind==='trapDart'){
     const rows=['........','...t....','...tt...','..stt...','..shtt..','..ssh...','...s....','........'];
     const colors={t:'#e3d6a5',s:'#4d783f',h:'#a5bd67'};
