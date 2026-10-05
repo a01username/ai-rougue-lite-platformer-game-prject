@@ -543,6 +543,38 @@ function updateTraps(dt=1/120){
     }else if(trap.type==='crusher'&&state.active&&overlap(player,{x:state.body.x,y:state.body.y+state.body.h-4,w:state.body.w,h:6}))damage(state.body);
   }
 }
+function drawThornPlant(pixel,angle,offset,warning,asleep){
+  // A small volume of art pixels, rather than a flat sprite turned edge-on.
+  const cells=[];
+  const add=(x,y,z,material)=>cells.push({x,y,z,material});
+  for(let y=-4;y>=-32;y-=4)for(const x of [-2,2])for(const z of [-2,2])add(x,y,z,'leaf');
+  // Leaves grow around three different sides of the stalk.
+  for(let i=0;i<3;i++){
+    const az=i*Math.PI*2/3+.3,base=-12-i*4;
+    for(let r=4;r<=20;r+=4){
+      const width=r<16?4:0;
+      for(let w=-width;w<=width;w+=4)add(Math.cos(az)*r-Math.sin(az)*w,base-r*.4,Math.sin(az)*r+Math.cos(az)*w,'leaf');
+    }
+  }
+  // A rounded seed head stays full-width throughout the turn.
+  for(let x=-6;x<=6;x+=4)for(let z=-6;z<=6;z+=4)if(x*x+z*z<=60){
+    add(x,-32,z,'leaf');add(x,-36,z,'seed');add(x,-40,z,'seed');
+  }
+  for(let i=0;i<5;i++){
+    const az=i*Math.PI*2/5;
+    for(const r of [8,12])for(const h of [-36,-40])add(Math.cos(az)*r,h,Math.sin(az)*r,'petal');
+    add(Math.cos(az)*16,-40,Math.sin(az)*16,'thorn');
+    add(Math.cos(az)*8,-44,Math.sin(az)*8,'petal');
+  }
+  add(0,-44,0,'seed');
+  const palette={leaf:asleep?['#415339','#566b47','#788258']:['#395c32','#79a44f','#afd16c'],seed:['#8d793f','#c4a458','#efcf81'],petal:warning?['#845267','#c486a0','#efb6c8']:['#684663','#ad719a','#d8a4c8'],thorn:['#999375','#cbc397','#efe4ba']};
+  const c=Math.cos(angle),s=Math.sin(angle);
+  const projected=cells.map(p=>({...p,rx:p.x*c+p.z*s,depth:p.z*c-p.x*s})).sort((a,b)=>a.depth-b.depth);
+  for(const p of projected){
+    const shade=p.rx<-2?2:p.depth>2?1:0;
+    pixel(Math.round((p.rx-2)/4)*4,Math.round((p.y+p.depth*.22+offset)/4)*4,4,4,palette[p.material][shade]);
+  }
+}
 function drawTraps(){
   const theme=mountainTheme();
   for(const trap of room.traps||[]){
@@ -575,29 +607,7 @@ function drawTraps(){
       ctx.save();ctx.beginPath();ctx.rect(x-28,y-48,56,48);ctx.clip();
       const wind=clamp((state.phase-1.5)/.8,0,1),release=clamp((state.phase-2.3)/.85,0,1);
       const angle=asleep?0:state.warning?-Math.PI/2*wind*wind:state.active?-Math.PI/2+Math.PI*2.5*(1-Math.pow(1-release,3)):0;
-      // Turn around the rooted stem, projecting each art pixel onto the grid.
-      const plant=(dx,dy,w,h,c)=>{
-        for(let px=dx;px<dx+w;px+=4)for(let py=dy;py<dy+h;py+=4){
-          const depth=py<-28?4:py<-12?-4:0;
-          const rx=Math.round(((px+2)*Math.cos(angle)+depth*Math.sin(angle)-2)/4)*4;
-          pixel(rx,py+offset,4,4,c);
-        }
-      };
-      plant(-4,-24,4,24,'#456637');plant(0,-32,4,16,leaf);
-      // Two pointed, serrated leaves join the stem at different heights.
-      plant(-12,-20,12,8,leaf);plant(-20,-24,12,8,leaf);plant(-24,-28,8,4,light);
-      plant(-16,-24,4,4,light);plant(-12,-20,8,4,light);
-      plant(4,-12,12,8,leaf);plant(12,-20,12,12,leaf);plant(20,-24,4,8,light);
-      plant(8,-12,8,4,light);plant(16,-20,4,8,light);
-      // Splayed purple petals surround one central seed spike (no face).
-      const petal=warning?'#d999ad':'#ad719a';
-      plant(-8,-36,16,12,'#587b3e');
-      plant(-16,-40,8,8,petal);plant(8,-40,8,8,petal);
-      plant(-12,-44,8,8,'#d0a0bc');plant(4,-44,8,8,'#d0a0bc');
-      plant(-4,-44,8,12,'#d7ba6e');plant(-4,-48,4,4,'#f0d790');
-      plant(-8,-32,16,4,leaf);
-      // Pale thorn tips point in the two firing directions.
-      plant(-20,-40,4,4,'#e4d8ae');plant(16,-40,4,4,'#e4d8ae');
+      drawThornPlant(pixel,angle,offset,warning,asleep);
       ctx.restore();
       // Basal leaves remain above the soil while the flower retracts.
       pixel(-16,-4,12,4,leaf);pixel(-20,-8,8,4,light);
