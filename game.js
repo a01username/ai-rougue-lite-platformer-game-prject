@@ -569,6 +569,22 @@ function updateHearts(){
   $('hearts').innerHTML=Array.from({length:5},(_,i)=>`<span class="heart ${player.hp>=i*2+2?'':player.hp===i*2+1?'half':'empty'}"></span>`).join('');
   $('hearts').setAttribute('aria-label',`${player.hp} of 10 hit points`);
 }
+const restartHold={held:false,latched:false,time:0,fade:0};
+const restartShade=document.createElement('div');
+restartShade.setAttribute('aria-live','polite');
+restartShade.style.cssText='position:absolute;inset:0;z-index:100;pointer-events:none;display:none;align-items:center;justify-content:center;color:#e4edc7;font:14px monospace;letter-spacing:2px';
+$('game-display').querySelector('.game-shell').appendChild(restartShade);
+function cancelRestartHold(){restartHold.held=false;restartHold.latched=false;restartHold.time=0;}
+function updateRestartHold(dt){
+  const r=restartHold;
+  if(r.held&&!r.latched){
+    r.time+=dt;r.fade=clamp(r.time/1.2,0,1);
+    if(r.time>=1.2){r.latched=true;r.time=0;start();r.fade=1;}
+  }else{r.time=0;r.fade=Math.max(0,r.fade-dt/.35);}
+  restartShade.style.display=r.fade>0?'flex':'none';
+  restartShade.style.background=`rgba(0,0,0,${r.fade})`;
+  restartShade.textContent=r.held&&!r.latched?'HOLD R TO RESTART · '+Math.floor(r.fade*100)+'%':'';
+}
 function start(){devFlight=false;flightAnchor=null;refreshDevIndicator();mapExpanded=false;transition=null;floor=1;player=createPlayer();enterRoom(buildFloor());updateHearts();setMode('playing');}
 function setMode(next){
   mode=next;flightTap=null;keys.clear();jumpQueued=attackQueued=false;accumulator=0;
@@ -580,6 +596,10 @@ function setMode(next){
 $('overlay-action').addEventListener('click',()=>mode==='title'||mode==='dead'||mode==='won'?start():setMode('playing'));
 $('pause-button').addEventListener('click',()=>{if(mode==='playing')setMode('paused');else if(mode==='paused'||mode==='inventory')setMode('playing');});
 window.addEventListener('keydown',e=>{
+  if(e.code==='KeyR'&&!e.ctrlKey&&!e.metaKey&&!e.altKey&&!e.target.closest?.('input,textarea,select,[contenteditable="true"]')){
+    if(mode!=='title'){e.preventDefault();if(!e.repeat&&!restartHold.held){restartHold.held=true;restartHold.latched=false;restartHold.time=0;}}
+    return;
+  }
   if(e.code==='Tab'&&mode==='playing'){
     e.preventDefault();if(!e.repeat)mapExpanded=!mapExpanded;return;
   }
@@ -612,6 +632,7 @@ window.addEventListener('keydown',e=>{
   }
 });
 window.addEventListener('keyup',e=>{
+  if(e.code==='KeyR')cancelRestartHold();
   keys.delete(e.code);devKeys.delete(e.code);
   if(e.code==='KeyE'&&inventoryTap){inventoryTap=false;if(mode==='playing')setMode('inventory');else if(mode==='inventory')setMode('playing');}
   if(!devChord()){devHoldStart=null;devLatched=false;}
@@ -625,8 +646,8 @@ canvas.addEventListener('mousedown',e=>{canvas.focus();
   }
   if(e.button===0&&controlScheme==='original'&&mode==='playing'&&!transition){attackQueued='mouse';e.preventDefault();}});
 canvas.addEventListener('contextmenu',e=>e.preventDefault());
-window.addEventListener('blur',()=>{resetDevInput();keys.clear();if(mode==='playing')setMode('paused');});
-document.addEventListener('visibilitychange',()=>{if(document.hidden){resetDevInput();keys.clear();if(mode==='playing')setMode('paused');}});
+window.addEventListener('blur',()=>{cancelRestartHold();resetDevInput();keys.clear();if(mode==='playing')setMode('paused');});
+document.addEventListener('visibilitychange',()=>{if(document.hidden){cancelRestartHold();resetDevInput();keys.clear();if(mode==='playing')setMode('paused');}});
 function damage(source){
   const p=player;if(devMode||p.iframes>0||mode!=='playing')return;
   p.climb=null;p.ledgeMoveKey=null;p.hp--;p.iframes=1.15;p.hitLock=.2;p.vx=(p.x+p.w/2<source.x+source.w/2?-1:1)*270;p.vy=-230;p.ledge=null;p.ground=null;updateHearts();
@@ -1557,7 +1578,8 @@ function draw(){
 function frame(now){
   updateDevToggle(now);
   const elapsed=Math.min((now-lastTime)/1000,.05);lastTime=now;
-  if(mode==='playing'){accumulator+=elapsed;while(accumulator>=1/120){update(1/120);accumulator-=1/120;if(mode!=='playing'){accumulator=0;break;}}}
+  updateRestartHold(elapsed);
+  if(mode==='playing'&&!restartHold.held&&restartHold.fade===0){accumulator+=elapsed;while(accumulator>=1/120){update(1/120);accumulator-=1/120;if(mode!=='playing'){accumulator=0;break;}}}
   draw();requestAnimationFrame(frame);
 }
 player=createPlayer();enterRoom(buildFloor());updateHearts();requestAnimationFrame(frame);
