@@ -426,6 +426,42 @@ function separateRoomPlatforms(r){
   r.platforms=kept;
   r.enemies=r.enemies.filter(e=>!e.support||kept.includes(e.support));
 }
+function clearPlatformIntersections(r){
+  const pieces=r.platforms;
+  for(const rock of pieces.filter(p=>p.shapeBoundary))rock.h=Math.min(rock.h,r.floorY-rock.y);
+  // Wall flags are not an exemption: preserve the top of a pillar but cut its
+  // buried tail before it reaches a lower foothold.
+  for(const wall of pieces.filter(p=>p.verticalWall&&!p.shapeBoundary)){
+    for(const ledge of pieces){
+      if(ledge===wall||ledge.type==='moving'||ledge.shapeBoundary||ledge.verticalWall)continue;
+      if(overlap(wall,ledge)&&ledge.y>wall.y+24)wall.h=Math.min(wall.h,ledge.y-wall.y-8);
+    }
+  }
+  // Trim overlapping ledges against rock, including required route ledges.
+  for(const p of [...pieces]){
+    if(p.type==='moving'||p.verticalWall||p.shapeBoundary||p===pieces[0])continue;
+    for(const rock of pieces){
+      if(rock===p||(!rock.verticalWall&&!rock.shapeBoundary)||!overlap(p,rock))continue;
+      const left=rock.x-p.x-8,right=p.x+p.w-rock.x-rock.w-8;
+      if(Math.max(left,right)>=28){
+        if(left>=right)p.w=left;
+        else{const x=rock.x+rock.w+8;p.w=right;p.baseX+=x-p.x;p.x=x;}
+      }
+    }
+  }
+  // Saved rails must also be checked against doorway geometry added at load.
+  for(const p of pieces.filter(p=>p.type==='moving')){
+    const length=p.trackLength,steps=Math.max(1,Math.ceil(length/4)),runs=[];let run=null;
+    for(let i=0;i<=steps;i++){
+      const point=trackPoint(p,i/steps*2-1),body={...point,w:p.w,h:p.h};
+      const clear=!pieces.some(o=>o!==p&&o.type!=='moving'&&overlap({x:body.x-4,y:body.y-4,w:body.w+8,h:body.h+8},o));
+      if(clear){if(!run){run={first:i,last:i};runs.push(run);}run.last=i;}else run=null;
+    }
+    if(runs.length===1&&runs[0].first===0&&runs[0].last===steps)continue;
+    runs.sort((a,b)=>(b.last-b.first)-(a.last-a.first));
+    if(runs.length){const best=runs[0],a=trackPoint(p,best.first/steps*2-1),b=trackPoint(p,best.last/steps*2-1);p.trackNodes=[a,b];p.trackLength=Math.hypot(b.x-a.x,b.y-a.y);p.x=a.x;p.y=a.y;p.trackElapsed=0;if(p.trackLength<8){p.type='oneway';delete p.trackNodes;}}
+  }
+}
 function generateRoom(r,size){
   r.size=size;r.links??={};Object.assign(r,ROOM_SIZES[size]);r.floorY=r.h-40;
   const bank=ROOM_LAYOUTS[r.bossId||size];
@@ -443,6 +479,7 @@ function generateRoom(r,size){
   Math.random=()=>{seed=(Math.imul(seed,1664525)+1013904223)>>>0;return seed/4294967296;};
   try{configurePassages(r);buildTracks(r);}finally{Math.random=random;}
   separateRoomPlatforms(r);
+  clearPlatformIntersections(r);
   r.traps=r.type==='normal'?(data.traps||[]).filter(t=>r.platforms.includes(data.platforms[t.supportIndex])).map(t=>({...t,support:data.platforms[t.supportIndex],lastCycle:-1})):[];
   for(const trap of r.traps)if(trap.type==='crusher'){
     const body=trapState(trap).body;trap.collider=platform(body.x,body.y,body.w,'solid',body.h);trap.collider.trapCollider=trap;r.platforms.push(trap.collider);
