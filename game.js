@@ -536,25 +536,48 @@ function updateTraps(dt=1/120){
   }
 }
 function drawTraps(){
+  const theme=mountainTheme();
   for(const trap of room.traps||[]){
     if(trap.support.gone>0)continue;
-    const s=trapState(trap),color=trap.disabled>0?'#485457':s.warning?'#ffd78a':s.active?'#ef9567':'#819695';
+    const state=trapState(trap),x=Math.round(state.x/4)*4,y=Math.round(state.y/4)*4;
+    const asleep=trap.disabled>0,warning=state.warning&&!asleep;
+    const moss=asleep?'#58665b':'#819568',eye=warning?'#ffd78a':state.active?'#ef9567':'#d5dfab';
+    const pixel=(dx,dy,w,h,c)=>rect(x+dx,y+dy,w,h,c);
     if(trap.type==='crusher'){
-      line(s.x,s.y-190,s.x,s.body.y,'#687779',4);
-      rect(s.body.x,s.body.y,s.body.w,s.body.h,'#59656d');rect(s.body.x+4,s.body.y+4,20,8,color);
-      for(let x=s.body.x;x<s.body.x+s.body.w;x+=8)polygon([[x,s.body.y+24],[x+4,s.body.y+32],[x+8,s.body.y+24]],'#d7dfcd');
-      if(s.warning)line(s.x-18,s.y-2,s.x+18,s.y-2,'#ffd78a',4);
-    }else{
-      rect(s.x-16,s.y-8,32,8,'#42525a');
-      if(trap.type==='dart'){
-        rect(s.x-12,s.y-40,24,32,'#59656d');rect(s.x-16,s.y-35,32,6,color);
-        if(trap.disabled>0){line(s.x-6,s.y-30,s.x+6,s.y-18,'#859092',2);line(s.x+6,s.y-30,s.x-6,s.y-18,'#859092',2);rect(s.x-12,s.y-46,24*(1-trap.disabled/6),3,'#859092');}
-        if(s.warning&&!(trap.disabled>0)){text('‹',s.x-24,s.y-25,18,color,'center');text('›',s.x+24,s.y-25,18,color,'center');}
-      }else{
-        for(let x=s.x-12;x<s.x+12;x+=8)rect(x,s.y-6,4,4,color);
-        if(s.active){const height=trap.height||144;for(let i=0;i<Math.ceil(height/12);i++){const y=s.y-8-((tick*180+i*14)%(height-8));rect(s.x-12+(i%3)*8,y,8,12,i%2?'#ddf5e8':'#81bfc9');}}
-        else if(s.warning){rect(s.x-4,s.y-22,8,8,'#b4c6bb');text('↑',s.x,s.y-32,16,'#b9e8df','center');}
+      const top=Math.round(state.body.y/4)*4;
+      // A root-tethered stone jaw; the face stays on the solid moving body.
+      for(let yy=y-192;yy<top;yy+=8){const bend=(Math.floor(yy/16)%2)*4;rect(x-4+bend,yy,4,8,'#637457');if(yy%24===0)rect(x+bend,yy,8,4,moss);}
+      rect(x-12,y-192,24,8,theme.rock);rect(x-8,y-196,16,4,moss);
+      rect(x-12,top+4,24,24,theme.rock);rect(x-8,top,16,4,moss);
+      rect(x-16,top+8,4,12,theme.shade);rect(x+12,top+8,4,12,theme.shade);
+      rect(x-8,top+4,8,4,theme.edge);rect(x+4,top+20,8,4,theme.shade);
+      rect(x-8,top+12,4,warning?8:4,eye);rect(x+4,top+12,4,warning?8:4,eye);
+      rect(x-8,top+24,16,4,'#192b28');
+      for(const dx of [-8,4]){rect(x+dx,top+24,4,8,'#d7dfbd');}
+      if(warning){pixel(-12,-4,24,4,'#d9bd83');}
+    }else if(trap.type==='dart'){
+      // A rooted thorn pod with two spitting mouths at projectile height.
+      pixel(-4,-24,8,24,'#596f4c');pixel(-16,-4,12,4,moss);pixel(4,-8,12,4,moss);
+      pixel(-12,-36,24,20,asleep?'#57655a':'#788657');pixel(-8,-44,16,8,moss);
+      pixel(-16,-32,4,12,'#455a46');pixel(12,-32,4,12,'#455a46');
+      pixel(-8,-36,4,4,asleep?'#394b42':eye);pixel(4,-36,4,4,asleep?'#394b42':eye);
+      for(const dir of [-1,1]){
+        const mouth=dir<0?-16:12;
+        pixel(mouth,-40,4,asleep?4:warning?12:8,asleep?moss:'#263e35');
+        if(!asleep)pixel(dir<0?-20:16,-40,4,4,'#d9d7a0');
       }
+      pixel(-8,-24,16,4,'#536941');
+      if(asleep){
+        // Buds reopen as the creature recovers from a hit.
+        const buds=Math.floor((1-trap.disabled/6)*4);
+        for(let i=0;i<4;i++)pixel(-12+i*8,-48,4,4,i<buds?'#b8c88a':'#435448');
+      }else if(warning){pixel(-12,-48,4,4,eye);pixel(8,-48,4,4,eye);}
+    }else{
+      // Mineral spring: a dark water basin inside uneven mossy stones.
+      pixel(-16,-8,32,8,theme.shade);pixel(-12,-12,8,8,theme.rock);pixel(8,-8,12,8,theme.rock);
+      pixel(-8,-8,16,4,'#548b91');pixel(-16,-8,4,4,moss);pixel(12,-12,4,4,theme.edge);
+      if(state.active){const height=trap.height||144;for(let i=0;i<Math.ceil(height/12);i++){const yy=y-8-((tick*180+i*14)%(height-8));rect(x-12+(i%3)*8,Math.round(yy/4)*4,8,12,i%2?'#ddf5e8':'#81bfc9');}}
+      else if(state.warning){const lift=Math.floor(tick*6)%3;pixel(-8,-16-lift*4,4,4,'#b9e8df');pixel(4,-24+lift*4,4,4,'#81bfc9');}
     }
   }
 }
