@@ -524,6 +524,10 @@ function updateTraps(dt=1/120){
       trap.disabled=Math.max(0,(trap.disabled||0)-dt);
       const turret=state.body;
       if(attack&&attack.time>0&&!attack.hit.has(trap)&&overlap(attackBox(),turret)){
+        if(state.active&&state.emerge===1&&!(trap.disabled>0)&&attack.dir==='down'&&!player.ground&&!devFlight){
+          player.vy=-500;player.ledge=null;player.climb=null;player.wall=0;
+          player.y=Math.min(player.y,turret.y-player.h);
+        }
         attack.hit.add(trap);trap.disabled=6;trap.lastCycle=cycle;
       }
       if(trap.disabled>0){trap.lastCycle=cycle;continue;}
