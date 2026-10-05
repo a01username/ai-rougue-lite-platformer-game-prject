@@ -507,8 +507,12 @@ function trapState(trap,time=tick){
   const warning=phase>=1.5&&phase<2.3,active=phase>=2.3&&phase<3.15;
   if(trap.type==='crusher'){
     const clock=trap.crusherClock??-1;
-    const travel=clock<.55?0:clock<.9?(clock-.55)/.35:clock<1.4?1:clamp(1-(clock-1.4)/.85,0,1);
+    const travel=clock<0?24/148:clock<.55?(24/148)*(1-clock/.55):clock<.78?Math.pow((clock-.55)/.23,2):clock<1.4?1:1-(124/148)*clamp((clock-1.4)/.85,0,1);
     return {x,y,phase:clock,warning:clock>=0&&clock<.55,active:clock>=.55&&clock<1.4,body:{x:x-14,y:y-180+148*travel,w:28,h:32}};
+  }
+  if(trap.type==='dart'){
+    const emerge=trap.disabled>0?0:phase<1.5?0:phase<1.9?(phase-1.5)/.4:phase<3.15?1:clamp(1-(phase-3.15)/.4,0,1);
+    return {x,y,phase,warning,active,emerge,body:{x:x-16,y:y-Math.max(4,44*emerge),w:32,h:Math.max(4,44*emerge)}};
   }
   return {x,y,phase,warning,active,body:{x:x-16,y:y-(trap.height||144),w:32,h:trap.height||144}};
 }
@@ -518,7 +522,7 @@ function updateTraps(dt=1/120){
     const state=trapState(trap),cycle=Math.floor((tick+trap.offset)/4);
     if(trap.type==='dart'){
       trap.disabled=Math.max(0,(trap.disabled||0)-dt);
-      const turret={x:state.x-16,y:state.y-40,w:32,h:40};
+      const turret=state.body;
       if(attack&&attack.time>0&&!attack.hit.has(trap)&&overlap(attackBox(),turret)){
         attack.hit.add(trap);trap.disabled=6;trap.lastCycle=cycle;
       }
@@ -545,9 +549,13 @@ function drawTraps(){
     const pixel=(dx,dy,w,h,c)=>rect(x+dx,y+dy,w,h,c);
     if(trap.type==='crusher'){
       const top=Math.round(state.body.y/4)*4;
-      // A root-tethered stone jaw; the face stays on the solid moving body.
-      for(let yy=y-192;yy<top;yy+=8){const bend=(Math.floor(yy/16)%2)*4;rect(x-4+bend,yy,4,8,'#637457');if(yy%24===0)rect(x+bend,yy,8,4,moss);}
-      rect(x-12,y-192,24,8,theme.rock);rect(x-8,y-196,16,4,moss);
+      // Two root bands pull taut as the stone winds back, then launch it down.
+      for(const dir of [-1,1]){
+        const ax=x+dir*36,ay=y-148,bx=x+dir*12,by=top+12;
+        const steps=Math.max(1,Math.ceil(Math.hypot(bx-ax,by-ay)/4));
+        for(let i=0;i<=steps;i++){const t=i/steps;rect(Math.round((ax+(bx-ax)*t)/4)*4,Math.round((ay+(by-ay)*t)/4)*4,4,4,warning?'#a8ae73':'#637457');}
+        rect(ax-8,ay-4,16,12,theme.rock);rect(ax-4,ay-8,8,4,moss);
+      }
       rect(x-12,top+4,24,24,theme.rock);rect(x-8,top,16,4,moss);
       rect(x-16,top+8,4,12,theme.shade);rect(x+12,top+8,4,12,theme.shade);
       rect(x-8,top+4,8,4,theme.edge);rect(x+4,top+20,8,4,theme.shade);
@@ -556,22 +564,21 @@ function drawTraps(){
       for(const dx of [-8,4]){rect(x+dx,top+24,4,8,'#d7dfbd');}
       if(warning){pixel(-12,-4,24,4,'#d9bd83');}
     }else if(trap.type==='dart'){
-      // A rooted thorn pod with two spitting mouths at projectile height.
-      pixel(-4,-24,8,24,'#596f4c');pixel(-16,-4,12,4,moss);pixel(4,-8,12,4,moss);
-      pixel(-12,-36,24,20,asleep?'#57655a':'#788657');pixel(-8,-44,16,8,moss);
-      pixel(-16,-32,4,12,'#455a46');pixel(12,-32,4,12,'#455a46');
-      pixel(-8,-36,4,4,asleep?'#394b42':eye);pixel(4,-36,4,4,asleep?'#394b42':eye);
+      // Faceless seed pod rises from a soil slit, then sinks after firing.
+      const rise=Math.round(44*state.emerge/4)*4,offset=44-rise;
+      pixel(-16,-4,32,4,theme.shade);
+      ctx.save();ctx.beginPath();ctx.rect(x-24,y-48,48,48);ctx.clip();
+      pixel(-4,-24+offset,8,24,'#596f4c');
+      pixel(-12,-36+offset,24,20,asleep?'#57655a':'#788657');
+      pixel(-8,-44+offset,16,8,moss);
+      pixel(-4,-40+offset,4,20,'#a0a777');
       for(const dir of [-1,1]){
-        const mouth=dir<0?-16:12;
-        pixel(mouth,-40,4,asleep?4:warning?12:8,asleep?moss:'#263e35');
-        if(!asleep)pixel(dir<0?-20:16,-40,4,4,'#d9d7a0');
+        pixel(dir<0?-16:12,-40+offset,4,8,'#263e35');
+        pixel(dir<0?-20:16,-40+offset,4,4,'#d9d7a0');
       }
-      pixel(-8,-24,16,4,'#536941');
-      if(asleep){
-        // Buds reopen as the creature recovers from a hit.
-        const buds=Math.floor((1-trap.disabled/6)*4);
-        for(let i=0;i<4;i++)pixel(-12+i*8,-48,4,4,i<buds?'#b8c88a':'#435448');
-      }else if(warning){pixel(-12,-48,4,4,eye);pixel(8,-48,4,4,eye);}
+      ctx.restore();
+      pixel(-20,-4,8,4,moss);pixel(12,-4,8,4,moss);
+      if(asleep){const buds=Math.floor((1-trap.disabled/6)*4);for(let i=0;i<4;i++)pixel(-12+i*8,-4,4,4,i<buds?'#b8c88a':'#435448');}
     }else{
       // Mineral spring: a dark water basin inside uneven mossy stones.
       pixel(-16,-8,32,8,theme.shade);pixel(-12,-12,8,8,theme.rock);pixel(8,-8,12,8,theme.rock);
