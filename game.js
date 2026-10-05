@@ -881,8 +881,8 @@ function updatePlayer(dt){
   if(!p.ground&&p.vy>=0&&p.ledgeCD<=0&&!down&&p.hitLock<=0){
     for(const s of room.platforms){
       if(s.gone>0||s.y>=room.floorY)continue;
-      const side=direction===1&&Math.abs(p.x+p.w-s.x)<=9?1:direction===-1&&Math.abs(p.x-s.x-s.w)<=9?-1:0;
-      if(side&&direction===side&&p.y>=s.y-15&&p.y<=s.y+16){p.ledge={platform:s,side};p.vx=p.vy=0;break;}
+      const side=direction===1&&Math.abs(p.x+p.w-s.x)<=4?1:direction===-1&&Math.abs(p.x-s.x-s.w)<=4?-1:0;
+      if(side&&direction===side&&p.y>=s.y-8&&p.y<=s.y+8){p.ledge={platform:s,side};p.vx=p.vy=0;break;}
     }
   }
   const topOpen=passages.some(e=>e.dy===1&&p.x>=e.x&&p.x+p.w<=e.x+e.w);
