@@ -1242,6 +1242,7 @@ function updateEnemies(dt){
     if(e.hp>0&&overlap(p,e))damage(e);
   }
   for(const s of shots){
+    s.spinTime=(s.spinTime||0)+dt;
     if(s.orbit){s.angle+=dt*1.4;s.x=s.orbit.x+s.orbit.w/2+Math.cos(s.angle)*76-s.w/2;s.y=s.orbit.y+s.orbit.h/2+Math.sin(s.angle)*76-s.h/2;}
     else{s.x+=s.vx*dt;s.y+=s.vy*dt;}s.life-=dt;
     // Each swing damages a projectile once. Surviving shots remain dangerous.
@@ -1532,7 +1533,20 @@ function drawEnemies(){
       if(!e.boss){ctx.strokeStyle='rgba(190,137,83,.45)';ctx.setLineDash([4,8]);ctx.beginPath();ctx.moveTo(cx-370*.65,cy+370);ctx.lineTo(cx,cy);ctx.lineTo(cx+370*.65,cy+370);ctx.stroke();ctx.setLineDash([]);}
     }
   }
-  for(const s of shots){if(s.kind==='wave'){polygon([[s.x,s.y+12],[s.x+8,s.y],[s.x+14,s.y+5],[s.x+22,s.y+12]],'#d6bb8d');}else drawSprite('projectile',s.x+s.w/2-16,s.y+s.h/2-16,32,32);}
+  for(const s of shots){if(s.kind==='wave'){polygon([[s.x,s.y+12],[s.x+8,s.y],[s.x+14,s.y+5],[s.x+22,s.y+12]],'#d6bb8d');}else drawSpinningProjectile(s);}
+}
+function drawSpinningProjectile(s){
+  const turn=Math.floor((s.spinTime||0)/.08)%4,direction=s.vx<0?-1:1;
+  ctx.save();
+  ctx.translate(Math.round((s.x+s.w/2)/4)*4,Math.round((s.y+s.h/2)/4)*4);
+  // Quarter-turn frames keep every art pixel aligned to the shared pixel grid.
+  ctx.rotate(turn*Math.PI/2*direction);
+  if(s.kind==='trapDart'){
+    const rows=['........','...t....','...tt...','..stt...','..shtt..','..ssh...','...s....','........'];
+    const colors={t:'#e3d6a5',s:'#4d783f',h:'#a5bd67'};
+    rows.forEach((row,y)=>[...row].forEach((c,x)=>{if(colors[c])rect(x*4-16,y*4-16,4,4,colors[c]);}));
+  }else drawSprite('projectile',-16,-16,32,32);
+  ctx.restore();
 }
 function drawSprite(kind,x,y,w=32,h=32,frame=0,flip=false,flash=false,tint=0,pose='idle'){
   const sprite=PixelArt.sprite(kind,frame,pose);
