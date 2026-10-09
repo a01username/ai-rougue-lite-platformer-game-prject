@@ -317,7 +317,7 @@ function tryBuildFloor(){
           for(const d of directions){
             // Match the incoming connection and reserve the correct outgoing
             // direction for elongated rooms. Occupancy checks cover every tile.
-            const sizes=shuffle(d==='up'?['small','large','tall',...L_SHAPES]:['small','large','long']);
+            const sizes=(type==='item'||type==='shop')?['small']:shuffle(d==='up'?['small','large','tall',...L_SHAPES]:['small','large','long']);
             for(const size of sizes){if(size==='long'&&horizontalRun>=1)continue;const n=attach(tip,d,size,type,true);if(n){horizontalRun=d==='up'?0:horizontalRun+1;if(d==='up')upSteps++;return n;}}
           }
           return null;
