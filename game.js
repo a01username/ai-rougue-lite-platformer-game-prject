@@ -473,7 +473,7 @@ function placeRouteGeysers(r){
     const candidates=[...pairs].sort((a,b)=>Number(b[0]===trap.support)-Number(a[0]===trap.support));
     let choice=null;
     for(const [support,target]of candidates){
-      if(!r.platforms.includes(support)||!r.platforms.includes(target)||occupied.has(support)||support.type==='moving'||target.type==='moving'||support.w<40)continue;
+      if(!r.platforms.includes(support)||!r.platforms.includes(target)||occupied.has(support)||!['solid','break'].includes(support.type)||target.type==='moving'||support.w<40)continue;
       const rise=support.y-target.y;
       if(rise<80||rise>240)continue;
       const height=clamp(Math.ceil(rise*.65/32)*32,96,192);
@@ -484,13 +484,13 @@ function placeRouteGeysers(r){
         const x=support.x+localX,dx=target.x+target.w/2-x;
         if(Math.abs(dx)<48||Math.abs(dx)>190)continue;
         const lane={x:x-24,y:support.y-clearance,w:48,h:clearance};
-        if(r.platforms.some(p=>p!==support&&overlap(lane,p.trapCollider?{x:p.x,y:p.trapCollider.support.y-180,w:p.w,h:180}:platformBounds(p))))continue;
+        if(r.platforms.some(p=>p!==support&&overlap(lane,p.trapCollider?{x:p.x,y:(p.trapCollider.anchorY??p.trapCollider.support.y)-180,w:p.w,h:r.floorY-((p.trapCollider.anchorY??p.trapCollider.support.y)-180)}:platformBounds(p))))continue;
         choice={support,target,height,localX,clearance};break;
       }
       if(choice)break;
     }
     // No useful, unobstructed launch here: omit the vent rather than block it.
-    if(choice){Object.assign(trap,choice);placed.push(trap);occupied.add(choice.support);}
+    if(choice){choice.support.type='solid';choice.support.life=0;choice.support.gone=0;Object.assign(trap,choice);placed.push(trap);occupied.add(choice.support);}
   }
   r.traps=[...other,...placed];
 }
@@ -513,7 +513,15 @@ function generateRoom(r,size){
   separateRoomPlatforms(r);
   clearPlatformIntersections(r);
   r.traps=r.type==='normal'?(data.traps||[]).filter(t=>r.platforms.includes(data.platforms[t.supportIndex])).map(t=>({...t,support:data.platforms[t.supportIndex],lastCycle:-1})):[];
+  const occupied=new Set(r.traps.filter(t=>t.type!=='dart'&&t.type!=='vent').map(t=>t.support));
+  r.traps=r.traps.filter(t=>{
+    if(t.type!=='dart')return true;
+    const candidates=r.platforms.filter(p=>p.type==='solid'&&!p.shapeBoundary&&!p.trapCollider&&p.w>=40&&!occupied.has(p)).sort((a,b)=>Math.hypot(a.x-t.support.x,a.y-t.support.y)-Math.hypot(b.x-t.support.x,b.y-t.support.y));
+    const support=candidates.find(p=>!r.platforms.some(o=>o!==p&&overlap({x:p.x+p.w/2-24,y:p.y-48,w:48,h:48},platformBounds(o))));
+    if(!support)return false;t.support=support;occupied.add(support);return true;
+  });
   for(const trap of r.traps)if(trap.type==='crusher'){
+    trap.anchorX=trap.support.x+trap.support.w/2;trap.anchorY=trap.support.y;
     const body=trapState(trap).body;trap.collider=platform(body.x,body.y,body.w,'solid',body.h);trap.collider.trapCollider=trap;r.platforms.push(trap.collider);
   }
   placeRouteGeysers(r);
@@ -522,26 +530,36 @@ function generateRoom(r,size){
 }
 // Trigger once under the head, then complete warning, slam, and return.
 function updateCrusher(trap,dt){
-  if(trap.support.gone>0){trap.crusherClock=-1;trap.crusherCooldown=0;return;}
-  if((trap.crusherClock??-1)>=0){
-    trap.crusherClock+=dt;
-    if(trap.crusherClock>=2.25){trap.crusherClock=-1;trap.crusherCooldown=.65;}
-    return;
+  trap.anchorX??=trap.support.x+trap.support.w/2;trap.anchorY??=trap.support.y;
+  const x=trap.anchorX,home=trap.anchorY-156;
+  trap.crusherY??=home;trap.crusherStage??='idle';
+  const landing=()=>Math.min(room.floorY,...room.platforms.filter(p=>p!==trap.collider&&!p.trapCollider&&p.gone<=0&&p.y>=trap.crusherY+30&&p.x<x+14&&p.x+p.w>x-14).map(p=>p.y));
+  if(trap.crusherStage==='idle'){
+    trap.crusherCooldown=Math.max(0,(trap.crusherCooldown||0)-dt);
+    const floor=landing(),lane={x:x-14,y:home+32,w:28,h:Math.max(0,floor-home-32)};
+    if(!devFlight&&!trap.crusherCooldown&&overlap(player,lane)){trap.crusherStage='wind';trap.crusherClock=0;}
+  }else if(trap.crusherStage==='wind'){
+    trap.crusherClock+=dt;trap.crusherY=home-24*clamp(trap.crusherClock/.55,0,1);
+    if(trap.crusherClock>=.55){trap.crusherStage='fall';trap.crusherSpeed=280;}
+  }else if(trap.crusherStage==='fall'){
+    const floor=landing();trap.crusherSpeed=Math.min(1100,(trap.crusherSpeed||0)+2200*dt);
+    trap.crusherY=Math.min(floor-32,trap.crusherY+trap.crusherSpeed*dt);
+    if(trap.crusherY+32>=floor){trap.crusherStage='hold';trap.crusherClock=0;}
+  }else if(trap.crusherStage==='hold'){
+    if(landing()>trap.crusherY+34){trap.crusherStage='fall';trap.crusherSpeed=0;return;}
+    trap.crusherClock+=dt;if(trap.crusherClock>=.5)trap.crusherStage='return';
+  }else{
+    trap.crusherY=Math.max(home,trap.crusherY-320*dt);
+    if(trap.crusherY===home){trap.crusherStage='idle';trap.crusherClock=-1;trap.crusherCooldown=.65;}
   }
-  trap.crusherCooldown=Math.max(0,(trap.crusherCooldown||0)-dt);
-  const s=trap.support,x=s.x+s.w/2;
-  const lane={x:x-14,y:s.y-148,w:28,h:148};
-  const blocked=room.platforms.some(p=>p!==s&&p!==trap.collider&&p.gone<=0&&p.type!=='moving'&&p.type!=='oneway'&&overlap({x:x-12,y:s.y-148,w:24,h:Math.max(0,player.y-(s.y-148))},p));
-  if(!devFlight&&trap.crusherCooldown===0&&overlap(player,lane)&&!blocked)trap.crusherClock=0;
 }
 function trapState(trap,time=tick){
   const phase=((time+trap.offset)%4+4)%4,s=trap.support;
-  const x=s.x+(trap.localX??s.w/2),y=s.y;
+  const x=trap.type==='crusher'?(trap.anchorX??s.x+s.w/2):s.x+(trap.localX??s.w/2),y=trap.type==='crusher'?(trap.anchorY??s.y):s.y;
   const warning=phase>=1.5&&phase<2.3,active=phase>=2.3&&phase<3.15;
   if(trap.type==='crusher'){
-    const clock=trap.crusherClock??-1;
-    const travel=clock<0?24/148:clock<.55?(24/148)*(1-clock/.55):clock<.78?Math.pow((clock-.55)/.23,2):clock<1.4?1:1-(124/148)*clamp((clock-1.4)/.85,0,1);
-    return {x,y,phase:clock,warning:clock>=0&&clock<.55,active:clock>=.55&&clock<1.4,body:{x:x-14,y:y-180+148*travel,w:28,h:32}};
+    const stage=trap.crusherStage||'idle';
+    return {x,y,phase:trap.crusherClock??-1,warning:stage==='wind',active:stage==='fall'||stage==='hold',body:{x:x-14,y:trap.crusherY??y-156,w:28,h:32}};
   }
   if(trap.type==='dart'){
     const emerge=trap.disabled>0?0:phase<1.5?0:phase<1.9?(phase-1.5)/.4:phase<3.15?1:clamp(1-(phase-3.15)/.4,0,1);
@@ -551,7 +569,7 @@ function trapState(trap,time=tick){
 }
 function updateTraps(dt=1/120){
   for(const trap of room.traps||[]){
-    if(trap.support.gone>0)continue;
+    if(trap.type!=='crusher'&&trap.support.gone>0)continue;
     const state=trapState(trap),cycle=Math.floor((tick+trap.offset)/4);
     if(trap.type==='dart'){
       trap.disabled=Math.max(0,(trap.disabled||0)-dt);
@@ -611,7 +629,7 @@ function drawThornPlant(pixel,angle,offset,warning,asleep){
 function drawTraps(){
   const theme=mountainTheme();
   for(const trap of room.traps||[]){
-    if(trap.support.gone>0)continue;
+    if(trap.type!=='crusher'&&trap.support.gone>0)continue;
     const state=trapState(trap),x=Math.round(state.x/4)*4,y=Math.round(state.y/4)*4;
     const asleep=trap.disabled>0,warning=state.warning&&!asleep;
     const moss=asleep?'#58665b':'#819568',eye=warning?'#ffd78a':state.active?'#ef9567':'#d5dfab';
@@ -625,12 +643,11 @@ function drawTraps(){
         for(let i=0;i<=steps;i++){const t=i/steps;rect(Math.round((ax+(bx-ax)*t)/4)*4,Math.round((ay+(by-ay)*t)/4)*4,4,4,warning?'#a8ae73':'#637457');}
         rect(ax-8,ay-4,16,12,theme.rock);rect(ax-4,ay-8,8,4,moss);
       }
-      rect(x-12,top+4,24,24,theme.rock);rect(x-8,top,16,4,moss);
-      rect(x-16,top+8,4,12,theme.shade);rect(x+12,top+8,4,12,theme.shade);
-      rect(x-8,top+4,8,4,theme.edge);rect(x+4,top+20,8,4,theme.shade);
-      rect(x-8,top+12,4,warning?8:4,eye);rect(x+4,top+12,4,warning?8:4,eye);
-      rect(x-8,top+24,16,4,'#192b28');
-      for(const dx of [-8,4]){rect(x+dx,top+24,4,8,'#d7dfbd');}
+      // A heavy, faceless seed pod with leafy ribs and a thorned tip.
+      rect(x-12,top+4,24,20,'#52733f');rect(x-8,top,16,4,'#9cad62');
+      rect(x-16,top+8,4,12,'#79944b');rect(x+12,top+8,4,12,'#354f32');
+      rect(x-8,top+4,4,20,'#b1bd72');rect(x+4,top+4,4,20,'#304c31');
+      rect(x-8,top+24,16,4,'#71894a');rect(x-4,top+28,8,4,'#dfc98e');
       if(warning){pixel(-12,-4,24,4,'#d9bd83');}
     }else if(trap.type==='dart'){
       // A flowering thistle: leafy silhouette, curved stem, and petal crown.
@@ -642,6 +659,13 @@ function drawTraps(){
       const angle=asleep?0:state.warning?-Math.PI/2*wind*wind:state.active?-Math.PI/2+Math.PI*2.5*(1-Math.pow(1-release,3)):0;
       drawThornPlant(pixel,angle,offset,warning,asleep);
       ctx.restore();
+      // Roots follow the support's top and curl around both edges.
+      const root=trap.support;
+      for(const edge of [root.x,root.x+root.w-4]){
+        const ex=Math.round(edge/4)*4,ey=Math.round(root.y/4)*4;
+        for(let rx=Math.min(ex,x);rx<=Math.max(ex,x);rx+=4)rect(rx,ey+4,4,4,'#637449');
+        for(let ry=ey+4;ry<ey+Math.min(root.h,24);ry+=4)rect(ex,ry,4,4,'#637449');
+      }
       // Basal leaves remain above the soil while the flower retracts.
       pixel(-16,-4,12,4,leaf);pixel(-20,-8,8,4,light);
       pixel(4,-4,12,4,leaf);pixel(12,-8,8,4,light);
@@ -992,7 +1016,7 @@ function updatePlatforms(dt){
       const trap=s.trapCollider;
       updateCrusher(trap,dt);
       const next=trapState(trap).body,oldY=s.y;
-      s.gone=trap.support.gone>0?1:0;s.dx=next.x-s.x;s.dy=next.y-s.y;s.x=next.x;s.y=next.y;
+      s.gone=0;s.dx=next.x-s.x;s.dy=next.y-s.y;s.x=next.x;s.y=next.y;
       if(s.gone<=0&&!devFlight&&player.ground!==s&&overlap(player,s)){
         if(s.dy>0&&player.y>=oldY+s.h-8)damage(s);
         const choices=[{x:s.x-player.w,y:player.y},{x:s.x+s.w,y:player.y},{x:player.x,y:s.y+s.h}].sort((a,b)=>Math.abs(a.x-player.x)+Math.abs(a.y-player.y)-Math.abs(b.x-player.x)-Math.abs(b.y-player.y));
@@ -1009,7 +1033,7 @@ function updatePlatforms(dt){
       const next=trackPoint(s,progress*2-1);s.dx=next.x-s.x;s.dy=next.y-s.y;s.x=next.x;s.y=next.y;
     }
     if(s.type==='break'){
-      if(s.gone>0){s.gone-=dt;if(s.gone<=0&&overlap(player,s))s.gone=.1;continue;}
+      if(s.gone>0){s.gone-=dt;if(s.gone<=0&&(overlap(player,s)||room.platforms.some(p=>p.trapCollider&&overlap(p,s))))s.gone=.1;continue;}
       if(player.ground===s){s.life+=dt;s.crumbleClock=(s.crumbleClock||0)+dt;if(s.crumbleClock>=.12){crumbleParticles(s,2);s.crumbleClock=0;}}
       else{s.life=Math.max(0,s.life-dt*.08);s.crumbleClock=0;}
       if(s.life>=BREAK_DELAY){crumbleParticles(s,18);s.life=0;s.gone=12;if(player.ground===s)player.ground=null;}
@@ -1498,6 +1522,11 @@ function drawPlatforms(){
       const right=s.x+Math.floor((s.w-4)/4)*4,bottom=s.y+Math.max(4,Math.floor((s.h-4)/4)*4);
       for(let x=s.x;x<=right;x+=12){rect(x,s.y,4,4,t.edge);rect(x,bottom,4,4,t.edge);}
       for(let y=s.y;y<=bottom;y+=12){rect(s.x,y,4,4,t.edge);rect(right,y,4,4,t.edge);}
+      ctx.globalAlpha=1;
+      const progress=clamp(1-s.gone/12,0,1);
+      rect(s.x,s.y+Math.max(4,s.h)+6,s.w,4,t.shade);
+      rect(s.x,s.y+Math.max(4,s.h)+6,Math.floor(s.w*progress/4)*4,4,t.edge);
+      text(Math.ceil(s.gone)+'s',s.x+s.w/2,s.y-8,10,t.edge,'center');
       ctx.restore();continue;
     }
     if(s.type==='oneway'||s.type==='moving'){
@@ -1591,17 +1620,29 @@ function drawEnemies(){
   }
   for(const s of shots){if(s.kind==='wave'){polygon([[s.x,s.y+12],[s.x+8,s.y],[s.x+14,s.y+5],[s.x+22,s.y+12]],'#d6bb8d');}else drawSpinningProjectile(s);}
 }
+const projectileSpinFrames=[];
+function projectileSpinFrame(frame){
+  if(projectileSpinFrames[frame])return projectileSpinFrames[frame];
+  const source=PixelArt.sprite('projectile',0,'idle'),sc=document.createElement('canvas');sc.width=sc.height=8;
+  const g=sc.getContext('2d');g.drawImage(source,0,0,8,8);const src=g.getImageData(0,0,8,8),out=g.createImageData(8,8);
+  const angle=frame*Math.PI/8,c=Math.cos(angle),s=Math.sin(angle);
+  for(let y=0;y<8;y++)for(let x=0;x<8;x++){
+    const dx=x-3.5,dy=y-3.5,sx=Math.round(dx*c+dy*s+3.5),sy=Math.round(-dx*s+dy*c+3.5);
+    if(sx>=0&&sx<8&&sy>=0&&sy<8)for(let k=0;k<4;k++)out.data[(y*8+x)*4+k]=src.data[(sy*8+sx)*4+k];
+  }
+  g.putImageData(out,0,0);return projectileSpinFrames[frame]=sc;
+}
 function drawSpinningProjectile(s){
-  const turn=Math.floor((s.spinTime||0)/.08)%4,direction=s.vx<0?-1:1;
+  const turn=Math.floor((s.spinTime||0)/.025)%16,direction=s.vx<0?-1:1;
   ctx.save();
   ctx.translate(Math.round((s.x+s.w/2)/4)*4,Math.round((s.y+s.h/2)/4)*4);
-  // Quarter-turn frames keep every art pixel aligned to the shared pixel grid.
-  ctx.rotate(s.kind==='trapDart'?(s.vx<0?-Math.PI/2:Math.PI/2):turn*Math.PI/2*direction);
+  // Cached raster rotations keep each art pixel on the shared grid.
+  if(s.kind==='trapDart')ctx.rotate(s.vx<0?-Math.PI/2:Math.PI/2);
   if(s.kind==='trapDart'){
     const rows=['........','...t....','...tt...','..stt...','..shtt..','..ssh...','...s....','........'];
     const colors={t:'#e3d6a5',s:'#4d783f',h:'#a5bd67'};
     rows.forEach((row,y)=>[...row].forEach((c,x)=>{if(colors[c])rect(x*4-16,y*4-16,4,4,colors[c]);}));
-  }else drawSprite('projectile',-16,-16,32,32);
+  }else{ctx.imageSmoothingEnabled=false;ctx.drawImage(projectileSpinFrame((turn*direction+16)%16),-16,-16,32,32);}
   ctx.restore();
 }
 function drawSprite(kind,x,y,w=32,h=32,frame=0,flip=false,flash=false,tint=0,pose='idle'){
