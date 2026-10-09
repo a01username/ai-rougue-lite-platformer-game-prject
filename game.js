@@ -306,6 +306,7 @@ function tryBuildFloor(){
   // Each special room ends its own 5–7-room branch with varied footprints.
   const main=[...rooms.values()].filter(r=>r.type==='normal'&&!r.branch);
   const branchOrigins=new Set();
+  branchCeiling=current.y+current.gridH+2;
   for(const type of ['item','shop']){
     let placed=false;
     // Sample junctions throughout the path; do not always select the opposite
@@ -344,37 +345,21 @@ function tryBuildFloor(){
   if(!["item","shop"].every(type=>[...rooms.values()].some(r=>r.type===type)))return null;
   // Place the summit after side routes so even high main-path rooms can branch.
   const specialTop=Math.max(...[...rooms.values()].filter(r=>r.type==='item'||r.type==='shop').map(r=>r.y+r.gridH));
+  let summitDetours=0;
   while(current.y+current.gridH<specialTop){
-    // Branches can occupy the middle of the map. Step into open side space
-    // instead of filling the remaining climb with a repeated vertical shaft.
-    if(current.size==='tall'||current.size==='large'||isL(current)){
-      const junction=attach(current,'up','small');if(!junction)return null;current=junction;
-    }
-    const all=[...rooms.values()],left=Math.min(...all.map(r=>r.x)),right=Math.max(...all.map(r=>r.x+r.gridW));
-    const outward=current.x+current.gridW/2<(left+right)/2?'left':'right';
-    for(const direction of [outward,outward==='left'?'right':'left']){
-      let moved=false;
-      const span=pick([1,2,3]);
-      for(let i=0;i<span;i++){
-        let next=null;
-        for(const size of variedSizes(current,['long','small'],false)){next=attach(current,direction,size);if(next)break;}
-        if(!next)break;
-        const previous=current;current=next;
-        if(next.size==='long'){
-          const exit=attach(next,direction,'small');
-          if(!exit){remove(next);current=previous;break;}current=exit;
-        }
-        moved=true;
-      }
-      if(moved)break;
-    }
     let next=null;
-    for(const size of variedSizes(current,['large','tall',...L_SHAPES,'small'],false)){next=attach(current,'up',size);if(next)break;}
+    for(const size of variedSizes(current,['large','tall',...L_SHAPES,'small'],false)){
+      if(ROOM_SIZES[size].gridH>specialTop-current.y-current.gridH+1)continue;
+      next=attach(current,'up',size);if(next)break;
+    }
+    if(!next&&current.size==='small'&&summitDetours<2){
+      for(const dir of shuffle(['left','right'])){next=attach(current,dir,'small');if(next){summitDetours++;break;}}
+    }
     if(!next)return null;current=next;
   }
   const spec=bossForFloor(floor),finish=attach(current,'up',spec.size,'finish');
   if(!finish)return null;
-  finish.bossId=spec.id;finish.bossSpec=spec;finish.layout=Math.floor(rand(0,3));
+  finish.bossId=spec.id;finish.bossSpec=spec;finish.layout=chooseRoomLayout(spec.id,ROOM_LAYOUTS[spec.id].length);
   if(Object.keys(start.links).length!==1||!start.links.up)return null;
   for(const special of [...rooms.values()].filter(r=>r.type==='item'||r.type==='shop')){
     let branch=special;while(branch.parent?.branch)branch=branch.parent;
@@ -530,10 +515,17 @@ function placeRouteGeysers(r){
   }
   r.traps=[...other,...placed];
 }
+const roomLayoutDecks=new Map();
+function chooseRoomLayout(key,count){
+  let deck=roomLayoutDecks.get(key);
+  if(!deck||!deck.length){deck=shuffle(Array.from({length:count},(_,i)=>i));roomLayoutDecks.set(key,deck);}
+  return deck.pop();
+}
 function generateRoom(r,size){
   r.size=size;r.links??={};Object.assign(r,ROOM_SIZES[size]);r.floorY=r.h-40;
-  const bank=ROOM_LAYOUTS[r.bossId||size];
-  r.layout=r.layout??Math.floor(Math.random()*bank.length);
+  const bankKey=r.type==='start'?'start':r.bossId||size;
+  const bank=ROOM_LAYOUTS[bankKey];
+  r.layout=r.layout??chooseRoomLayout(bankKey,bank.length);
   const data=JSON.parse(JSON.stringify(bank[r.layout%bank.length]));
   r.platforms=data.platforms;
   function restore(o){for(const [key,value]of Object.entries(o))if(value&&typeof value==='object'&&'platformIndex'in value)o[key]=r.platforms[value.platformIndex];}
