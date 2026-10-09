@@ -268,12 +268,16 @@ function tryBuildFloor(){
     parent.ports[direction]=port;r.ports[opposite]=port;
     return r;
   }
-  const start=add(0,0,'small','start');start.entryAltitude=40;let current=start;
+  const start=add(0,0,'small','start');start.entryAltitude=40;
+  let current=attach(start,'up','small');
+  let drift=pick(['left','right']);
   // A compact first climb, then one extra route section every three floors.
   const routeSections=2+Math.floor((floor-1)/3);
   for(let level=0;level<routeSections;level++){
-    if(current!==start&&current.size!=='large'&&!isL(current)&&Math.random()<.6){
-      const direction=pick(['left','right']),distance=pick([1,2]);
+    if(current.size==='large'){const junction=attach(current,'up','small');if(junction)current=junction;}
+    if(current.size!=='large'&&!isL(current)&&(level===0||Math.random()<.85)){
+      if(Math.random()<.4)drift=drift==='left'?'right':'left';
+      const direction=drift,distance=pick([1,2,3]);
       for(let step=0;step<distance;step++){
         const previous=current,connector=attach(current,direction,step===distance-1?'small':pick(['long','small']));
         if(!connector)break;
@@ -297,11 +301,12 @@ function tryBuildFloor(){
   const branchOrigins=new Set();
   for(const type of ['item','shop']){
     let placed=false;
-    for(const source of shuffle(main).filter(r=>!branchOrigins.has(r)).sort((a,b)=>{
-      if(!branchOrigins.size)return 0;
-      const distance=r=>Math.min(...[...branchOrigins].map(o=>Math.abs(main.indexOf(r)-main.indexOf(o))));
-      return distance(b)-distance(a);
-    })){
+    // Sample junctions throughout the path; do not always select the opposite
+    // endpoint after the first branch. Prefer separation without a fixed rank.
+    const candidates=shuffle(main).filter(r=>!branchOrigins.has(r));
+    const separated=r=>[...branchOrigins].every(o=>Math.abs(main.indexOf(r)-main.indexOf(o))>=2);
+    const sources=[...candidates.filter(separated),...candidates.filter(r=>!separated(r))];
+    for(const source of sources){
       for(const direction of shuffle(source.size==='long'?['left','right']:source.size==='tall'||isL(source)?['up']:['left','right','up'])){
         if(source===current&&direction==='up')continue;
         for(let attempt=0;attempt<12&&!placed;attempt++){
@@ -333,6 +338,9 @@ function tryBuildFloor(){
   // Place the summit after side routes so even high main-path rooms can branch.
   const specialTop=Math.max(...[...rooms.values()].filter(r=>r.type==='item'||r.type==='shop').map(r=>r.y+r.gridH));
   while(current.y+current.gridH<specialTop){
+    if(current.size==='small'&&Math.random()<.65){
+      const side=attach(current,pick(['left','right']),'small');if(side)current=side;
+    }
     const next=attach(current,'up',specialTop-(current.y+current.gridH)>=2?'tall':'small');
     if(!next)return null;current=next;
   }
