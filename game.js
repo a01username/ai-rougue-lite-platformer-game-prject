@@ -462,6 +462,38 @@ function clearPlatformIntersections(r){
     if(runs.length){const best=runs[0],a=trackPoint(p,best.first/steps*2-1),b=trackPoint(p,best.last/steps*2-1);p.trackNodes=[a,b];p.trackLength=Math.hypot(b.x-a.x,b.y-a.y);p.x=a.x;p.y=a.y;p.trackElapsed=0;if(p.trackLength<8){p.type='oneway';delete p.trackNodes;}}
   }
 }
+function placeRouteGeysers(r){
+  const vents=r.traps.filter(t=>t.type==='vent'),other=r.traps.filter(t=>t.type!=='vent');
+  const occupied=new Set(other.map(t=>t.support)),placed=[];
+  const pairs=[];
+  for(let i=0;i<r.route.length-1;i++)pairs.push([r.route[i],r.route[i+1]]);
+  for(const p of r.platforms)if(p.accessFrom)pairs.push([p.accessFrom,p]);
+  for(const trap of vents){
+    // Prefer the existing location, but only when it serves the next route step.
+    const candidates=[...pairs].sort((a,b)=>Number(b[0]===trap.support)-Number(a[0]===trap.support));
+    let choice=null;
+    for(const [support,target]of candidates){
+      if(!r.platforms.includes(support)||!r.platforms.includes(target)||occupied.has(support)||support.type==='moving'||target.type==='moving'||support.w<40)continue;
+      const rise=support.y-target.y;
+      if(rise<80||rise>240)continue;
+      const height=clamp(Math.ceil(rise*.65/32)*32,96,192);
+      // Reserve plume height plus its possible ballistic overshoot and body size.
+      const clearance=height*2+48;
+      if(support.y-clearance<32)continue;
+      for(const localX of [support.w/2,20,support.w-20]){
+        const x=support.x+localX,dx=target.x+target.w/2-x;
+        if(Math.abs(dx)<48||Math.abs(dx)>190)continue;
+        const lane={x:x-24,y:support.y-clearance,w:48,h:clearance};
+        if(r.platforms.some(p=>p!==support&&overlap(lane,p.trapCollider?{x:p.x,y:p.trapCollider.support.y-180,w:p.w,h:180}:platformBounds(p))))continue;
+        choice={support,target,height,localX,clearance};break;
+      }
+      if(choice)break;
+    }
+    // No useful, unobstructed launch here: omit the vent rather than block it.
+    if(choice){Object.assign(trap,choice);placed.push(trap);occupied.add(choice.support);}
+  }
+  r.traps=[...other,...placed];
+}
 function generateRoom(r,size){
   r.size=size;r.links??={};Object.assign(r,ROOM_SIZES[size]);r.floorY=r.h-40;
   const bank=ROOM_LAYOUTS[r.bossId||size];
@@ -484,6 +516,7 @@ function generateRoom(r,size){
   for(const trap of r.traps)if(trap.type==='crusher'){
     const body=trapState(trap).body;trap.collider=platform(body.x,body.y,body.w,'solid',body.h);trap.collider.trapCollider=trap;r.platforms.push(trap.collider);
   }
+  placeRouteGeysers(r);
   configureFallHazards(r);
   if(r.bossId)createBoss(r);
 }
@@ -503,7 +536,7 @@ function updateCrusher(trap,dt){
 }
 function trapState(trap,time=tick){
   const phase=((time+trap.offset)%4+4)%4,s=trap.support;
-  const x=s.x+s.w/2,y=s.y;
+  const x=s.x+(trap.localX??s.w/2),y=s.y;
   const warning=phase>=1.5&&phase<2.3,active=phase>=2.3&&phase<3.15;
   if(trap.type==='crusher'){
     const clock=trap.crusherClock??-1;
