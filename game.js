@@ -353,7 +353,7 @@ function connectLanding(r,target){
   const anchors=r.route.filter(s=>s.type!=='moving');
   const source=anchors.reduce((best,s)=>Math.abs(s.y-target.y)<Math.abs(best.y-target.y)?s:best,anchors[0]);
   const sx=source.x+source.w/2,tx=target.x+target.w/2;
-  const steps=Math.max(1,Math.ceil(Math.abs(tx-sx)/(r.bossId?150:180)),Math.ceil(Math.abs(target.y-source.y)/(isL(r)?105:85)));
+  const steps=Math.max(1,Math.ceil(Math.abs(tx-sx)/(r.bossId?165:200)),Math.ceil(Math.abs(target.y-source.y)/(isL(r)?105:85)));
   let previous=source;
   for(let i=1;i<=steps;i++){
     const t=i/steps,last=i===steps,w=last?(target.w===150?150:90):(r.bossId?80:64);
