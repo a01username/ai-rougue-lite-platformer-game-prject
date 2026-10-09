@@ -268,6 +268,13 @@ function tryBuildFloor(){
     parent.ports[direction]=port;r.ports[opposite]=port;
     return r;
   }
+  const shapeFamily=size=>size.startsWith('invertedL')?'bend':size;
+  function variedSizes(tip,sizes,branch){
+    const counts=new Map();let last=tip;
+    while(last&&!!last.branch===branch){const family=shapeFamily(last.size);counts.set(family,(counts.get(family)||0)+1);last=last.parent;}
+    const scores=new Map(sizes.map(size=>[size,(counts.get(shapeFamily(size))||0)+Math.random()*2+(shapeFamily(size)===shapeFamily(tip.size)?2:0)]));
+    return [...sizes].sort((a,b)=>scores.get(a)-scores.get(b));
+  }
   const start=add(0,0,'small','start');start.entryAltitude=40;
   let current=attach(start,'up','small');
   let drift=pick(['left','right']);
@@ -289,7 +296,7 @@ function tryBuildFloor(){
       }
     }
     if(Math.random()<.55){const shaft=attach(current,'up','tall');if(shaft)current=shaft;}
-    current=attach(current,'up',pick(['small','large',...L_SHAPES]))||attach(current,'up','small')||current;
+    for(const size of variedSizes(current,['small','large',...L_SHAPES],false)){const next=attach(current,'up',size);if(next){current=next;break;}}
     // Give each climbing section a usable side junction, not just the summit.
     if(isL(current)||current.size==='tall'){const junction=attach(current,'up','small');if(!junction)return null;current=junction;}
   }
@@ -317,7 +324,7 @@ function tryBuildFloor(){
           for(const d of directions){
             // Match the incoming connection and reserve the correct outgoing
             // direction for elongated rooms. Occupancy checks cover every tile.
-            const sizes=(type==='item'||type==='shop')?['small']:shuffle(d==='up'?['small','large','tall',...L_SHAPES]:['small','large','long']);
+            const sizes=(type==='item'||type==='shop')?['small']:variedSizes(tip,d==='up'?['small','large','tall',...L_SHAPES]:['small','large','long'],true);
             for(const size of sizes){if(size==='long'&&horizontalRun>=1)continue;const n=attach(tip,d,size,type,true);if(n){horizontalRun=d==='up'?0:horizontalRun+1;if(d==='up')upSteps++;return n;}}
           }
           return null;
@@ -338,10 +345,31 @@ function tryBuildFloor(){
   // Place the summit after side routes so even high main-path rooms can branch.
   const specialTop=Math.max(...[...rooms.values()].filter(r=>r.type==='item'||r.type==='shop').map(r=>r.y+r.gridH));
   while(current.y+current.gridH<specialTop){
-    if(current.size==='small'&&Math.random()<.65){
-      const side=attach(current,pick(['left','right']),'small');if(side)current=side;
+    // Branches can occupy the middle of the map. Step into open side space
+    // instead of filling the remaining climb with a repeated vertical shaft.
+    if(current.size==='tall'||current.size==='large'||isL(current)){
+      const junction=attach(current,'up','small');if(!junction)return null;current=junction;
     }
-    const next=attach(current,'up',specialTop-(current.y+current.gridH)>=2?'tall':'small');
+    const all=[...rooms.values()],left=Math.min(...all.map(r=>r.x)),right=Math.max(...all.map(r=>r.x+r.gridW));
+    const outward=current.x+current.gridW/2<(left+right)/2?'left':'right';
+    for(const direction of [outward,outward==='left'?'right':'left']){
+      let moved=false;
+      const span=pick([1,2,3]);
+      for(let i=0;i<span;i++){
+        let next=null;
+        for(const size of variedSizes(current,['long','small'],false)){next=attach(current,direction,size);if(next)break;}
+        if(!next)break;
+        const previous=current;current=next;
+        if(next.size==='long'){
+          const exit=attach(next,direction,'small');
+          if(!exit){remove(next);current=previous;break;}current=exit;
+        }
+        moved=true;
+      }
+      if(moved)break;
+    }
+    let next=null;
+    for(const size of variedSizes(current,['large','tall',...L_SHAPES,'small'],false)){next=attach(current,'up',size);if(next)break;}
     if(!next)return null;current=next;
   }
   const spec=bossForFloor(floor),finish=attach(current,'up',spec.size,'finish');
