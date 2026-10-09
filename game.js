@@ -576,9 +576,9 @@ function updateCrusher(trap,dt){
     if(!devFlight&&!trap.crusherCooldown&&overlap(player,lane)){trap.crusherStage='wind';trap.crusherClock=0;}
   }else if(trap.crusherStage==='wind'){
     trap.crusherClock+=dt;trap.crusherY=home-24*clamp(trap.crusherClock/.55,0,1);
-    if(trap.crusherClock>=.55){trap.crusherStage='fall';trap.crusherSpeed=280;}
+    if(trap.crusherClock>=.55){trap.crusherStage='fall';trap.crusherSpeed=500;}
   }else if(trap.crusherStage==='fall'){
-    const floor=landing();trap.crusherSpeed=Math.min(1100,(trap.crusherSpeed||0)+2200*dt);
+    const floor=landing();trap.crusherSpeed=Math.min(1500,(trap.crusherSpeed||0)+3600*dt);
     trap.crusherY=Math.min(floor-32,trap.crusherY+trap.crusherSpeed*dt);
     if(trap.crusherY+32>=floor){trap.crusherStage='hold';trap.crusherClock=0;}
   }else if(trap.crusherStage==='hold'){
@@ -1281,6 +1281,19 @@ function inDiveCone(e,p=player){
   return dy>28&&dy<=370&&Math.abs(dx)<=dy*.65;
 }
 function updateCrawler(e,dt){
+  if(!e.support||e.support.gone>0||!room.platforms.includes(e.support)){
+    e.support=null;e.crawlDistance=undefined;e.crawlAngle=0;
+    const oldBottom=e.y+e.h;
+    e.vy=Math.min(900,(e.vy||0)+PLAYER_PHYSICS.gravity*dt);
+    e.x=clamp(e.x+e.vx*dt,0,room.w-e.w);e.y+=e.vy*dt;
+    const landing=room.platforms.filter(s=>s.gone<=0&&!s.trapCollider&&s.type!=='oneway'&&s.type!=='moving'&&e.x+e.w>s.x&&e.x<s.x+s.w&&oldBottom<=s.y+1&&e.y+e.h>=s.y).sort((a,b)=>a.y-b.y)[0];
+    if(landing){e.y=landing.y-e.h;e.vy=0;e.support=landing;e.crawlDistance=clamp(e.x-landing.x+e.w,0,landing.w+e.w);}
+    return;
+  }
+  e.vy=0;
+  if(e.support.y>=room.floorY){
+    e.x+=e.vx*dt;if(e.x<0||e.x+e.w>room.w){e.x=clamp(e.x,0,room.w-e.w);e.vx*=-1;}e.y=e.support.y-e.h;e.crawlAngle=0;return;
+  }
   const s=e.support,across=s.w+e.w,down=s.h+e.h,total=2*(across+down);
   // Expanded corners keep the body outside the rock throughout each turn.
   e.crawlDistance??=clamp(e.x-s.x+e.w,0,across);
@@ -1562,7 +1575,6 @@ function drawPlatforms(){
       const progress=clamp(1-s.gone/12,0,1);
       rect(s.x,s.y+Math.max(4,s.h)+6,s.w,4,t.shade);
       rect(s.x,s.y+Math.max(4,s.h)+6,Math.floor(s.w*progress/4)*4,4,t.edge);
-      text(Math.ceil(s.gone)+'s',s.x+s.w/2,s.y-8,10,t.edge,'center');
       ctx.restore();continue;
     }
     if(s.type==='oneway'||s.type==='moving'){
